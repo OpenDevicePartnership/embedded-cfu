@@ -1,0 +1,17 @@
+[package]
+name = "embedded-cfu-odp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+defmt = { version = "0.3", optional = true }
+log = { version = "0.4.14", optional = true }
+
+[features]
+default = []
+defmt = [
+    "dep:defmt",
+]
+log = [
+    "dep:log",
+]
