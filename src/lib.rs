@@ -5,8 +5,10 @@ use embedded_io_async::{Read, ReadExactError, Seek, SeekFrom};
 #[allow(unused_imports)]
 use itertools::Itertools;
 
+use crate::components::*;
 use crate::protocol_definitions::*;
 
+pub mod client;
 pub mod components;
 pub mod fmt;
 pub mod protocol_definitions;
