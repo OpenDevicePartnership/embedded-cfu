@@ -7,6 +7,7 @@ use itertools::Itertools;
 
 use crate::protocol_definitions::*;
 
+pub mod components;
 pub mod fmt;
 pub mod protocol_definitions;
 
