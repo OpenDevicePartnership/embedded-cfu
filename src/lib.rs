@@ -11,6 +11,7 @@ use crate::protocol_definitions::*;
 pub mod client;
 pub mod components;
 pub mod fmt;
+pub mod host;
 pub mod protocol_definitions;
 
 // re-export the error enum
@@ -65,6 +66,7 @@ pub trait CfuWriter {
     /// Writes a given buffer of data to a component
     fn cfu_write(&self, mem_offset: Option<usize>, data: &[u8]) -> impl Future<Output = Result<(), CfuWriterError>>;
 }
+
 pub type DataChunk = [u8; DEFAULT_DATA_LENGTH];
 
 #[derive(Copy, Clone)]
