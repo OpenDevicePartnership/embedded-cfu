@@ -10,7 +10,6 @@ binary_serde = "1.0.24"
 defmt = { version = "0.3", optional = true }
 embassy-sync = { git = "https://github.com/embassy-rs/embassy" }
 heapless = "0.8.0"
-itertools = { version = "0.14.0", default-features = false, features = ["use_alloc"] }
 log = { version = "0.4.14", optional = true }
 
 [features]
