@@ -2,8 +2,6 @@
 use core::future::Future;
 
 use embedded_io_async::{Read, ReadExactError, Seek, SeekFrom};
-#[allow(unused_imports)]
-use itertools::Itertools;
 
 use crate::components::*;
 use crate::protocol_definitions::*;
