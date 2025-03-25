@@ -1,5 +1,4 @@
-use binary_serde::recursive_array::RecursiveArraySingleItem;
-use binary_serde::{binary_serde_bitfield, BinarySerde, BitfieldBitOrder};
+use core::convert::TryFrom;
 
 use crate::CfuWriterError;
 
@@ -7,32 +6,41 @@ use crate::CfuWriterError;
 pub const MAX_CMPT_COUNT: usize = 7;
 pub const MAX_SUBCMPT_COUNT: usize = 6;
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, BinarySerde)]
+// Error types related to marshalling
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// MSB first Representation of FwVersion
+pub enum ConversionError {
+    ByteConversionError,
+    ValueOutOfRange,
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+/// LSB first Representation of FwVersion
 pub struct FwVersion {
-    pub major: u8,
-    pub minor: u16,
     pub variant: u8,
+    pub minor: u16,
+    pub major: u8,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, BinarySerde)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// MSB first Representation of GetFwVersionResponse
+/// LSB first Representation of GetFwVersionResponse
 pub struct GetFwVersionResponse {
-    pub misc_and_protocol_version: u32,
-    pub component_info: [FwVerComponentInfo; MAX_CMPT_COUNT],
     pub header: GetFwVersionResponseHeader,
+    pub component_info: [FwVerComponentInfo; MAX_CMPT_COUNT],
 }
 
-const PROTOCOL_VER4: u8 = 0b0010;
-#[derive(Copy, Clone, Debug, PartialEq, Eq, BinarySerde)]
+// CFU protocol spec at ver 2.0
+const PROTOCOL_VER: u8 = 0b0010;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// MSB first Representation GetFwVersionResponseHeader
+/// LSB first Representation of GetFwVersionResponseHeader
 pub struct GetFwVersionResponseHeader {
-    pub byte3: GetFwVerRespHeaderByte3,
-    _reserved: u16,
     pub component_count: u8,
+    _reserved: u16,
+    pub byte3: GetFwVerRespHeaderByte3,
 }
 
 impl GetFwVersionResponseHeader {
@@ -51,92 +59,177 @@ impl Default for GetFwVersionResponseHeader {
     }
 }
 
-#[derive(BinarySerde, Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
 pub enum GetFwVerRespHeaderByte3 {
     #[default]
-    NoSpecialFlags = PROTOCOL_VER4 << 4,
-    ExtensionFlagSet = (PROTOCOL_VER4 << 4) | 1,
+    NoSpecialFlags = PROTOCOL_VER << 4,
+    ExtensionFlagSet = (PROTOCOL_VER << 4) | 1,
 }
 
 pub type ComponentId = u8;
-
-#[derive(BinarySerde, Copy, Clone, Debug, Default, PartialEq, Eq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
-pub enum BankType {
-    #[default]
-    SingleBank = 1,
-    DualBank = 2,
-    TripleBank = 3,
-    QuadBank = 4,
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum SpecialComponentIds {
+    /// Special Component ID in the Component Information bytes for Offer Command Extended.
+    Command = 0xFE,
+    /// Special Component ID in the Component Information bytes for Offer Information.
+    Info = 0xFF,
+}
+
+// Conversion from u8 to SpecialComponentIds
+impl TryFrom<u8> for SpecialComponentIds {
+    type Error = ConversionError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0xFE => Ok(SpecialComponentIds::Command),
+            0xFF => Ok(SpecialComponentIds::Info),
+            _ => Err(ConversionError::ValueOutOfRange),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[binary_serde_bitfield(order = BitfieldBitOrder::MsbFirst)]
+#[repr(u8)]
+pub enum BankType {
+    /// Optional Bank Type for Vendor Specific use.
+    VendorSpecific(u8),
+}
+
+impl From<BankType> for u8 {
+    fn from(bank_type: BankType) -> Self {
+        match bank_type {
+            BankType::VendorSpecific(val) => val,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+/// LSB first Representation of FwVerComponentInfo
 pub struct FwVerComponentInfo {
-    #[bits(32)]
-    pub fw_version: FwVersion, // u32
-    #[bits(16)]
-    pub vendor_specific: u16,
-    #[bits(8)]
+    pub fw_version: FwVersion,     // u32
+    pub packed_byte: u8,           // u8, bits 0-1 for bank, bits 2-3 for reserved, bits 4-7 for vendor_specific0
     pub component_id: ComponentId, // u8
-    #[bits(4)]
-    pub vendor_specific2: u8, // 4-bits
-    #[bits(2)]
-    reserved: u8,
-    #[bits(2)]
-    pub bank: BankType,
+    pub vendor_specific1: u16,     // u16
 }
 
 impl FwVerComponentInfo {
-    pub fn new(fw_version: FwVersion, component_id: ComponentId, bank: BankType) -> Self {
+    pub fn new(fw_version: FwVersion, component_id: ComponentId) -> Self {
         Self {
             fw_version,
-            vendor_specific: 0,
+            packed_byte: 0,
             component_id,
-            vendor_specific2: 0,
-            reserved: 0,
-            bank,
+            vendor_specific1: 0,
         }
     }
     pub fn new_with_vendor_specific_info(
         fw_version: FwVersion,
         component_id: ComponentId,
         bank: BankType,
-        vendor_specific: u16,
-        vendor_specific2: u8,
+        vendor_specific0: u8,
+        vendor_specific1: u16,
     ) -> Self {
+        let bank: u8 = bank.into();
+        let packed_byte = (bank & 0x3) | ((vendor_specific0 & 0xF) << 4); // Bits 0-1 and 4-7
         Self {
             fw_version,
-            vendor_specific,
+            packed_byte,
             component_id,
-            vendor_specific2,
-            reserved: 0,
-            bank,
+            vendor_specific1,
         }
     }
 }
 
 impl Default for FwVerComponentInfo {
     fn default() -> Self {
-        Self::new(FwVersion::default(), 0, BankType::SingleBank)
+        Self::new(FwVersion::default(), 0)
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, BinarySerde)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// MSB first Representation of FwUpdateOfferCommand
-pub struct FwUpdateOfferCommand {
-    pub misc_and_protocol_version: u32, // u32
-    pub vendor_specific: u32,
-    pub firmware_version: FwVersion,              // u32
-    pub component_info: UpdateOfferComponentInfo, // u32
+// Convert to bytes
+impl From<&GetFwVersionResponse> for [u8; 60] {
+    fn from(response: &GetFwVersionResponse) -> Self {
+        let mut bytes = [0u8; 60];
+
+        // Serialize header
+        bytes[0] = response.header.component_count;
+        bytes[1..3].copy_from_slice(&response.header._reserved.to_le_bytes());
+        bytes[3] = response.header.byte3 as u8;
+
+        // Serialize component_info
+        let mut offset = 4;
+        for i in 0..response.header.component_count as usize {
+            let component = &response.component_info[i];
+            bytes[offset] = component.packed_byte;
+            bytes[offset + 1] = component.component_id;
+            bytes[offset + 2..offset + 4].copy_from_slice(&component.vendor_specific1.to_le_bytes());
+            bytes[offset + 4] = component.fw_version.major;
+            bytes[offset + 5..offset + 7].copy_from_slice(&component.fw_version.minor.to_le_bytes());
+            bytes[offset + 7] = component.fw_version.variant;
+            offset += 8;
+        }
+
+        bytes
+    }
 }
 
-impl FwUpdateOfferCommand {
+// Convert from bytes
+impl TryFrom<&[u8; 60]> for GetFwVersionResponse {
+    type Error = ConversionError;
+
+    fn try_from(bytes: &[u8; 60]) -> Result<Self, Self::Error> {
+        let component_count = bytes[0];
+
+        if component_count as usize > MAX_CMPT_COUNT {
+            return Err(ConversionError::ValueOutOfRange);
+        }
+
+        let _reserved = u16::from_le_bytes(bytes[1..3].try_into().unwrap());
+        let byte3 = match bytes[3] {
+            0x20 => GetFwVerRespHeaderByte3::NoSpecialFlags,
+            0x21 => GetFwVerRespHeaderByte3::ExtensionFlagSet,
+            _ => return Err(ConversionError::ValueOutOfRange),
+        };
+
+        let mut component_info = [FwVerComponentInfo::default(); MAX_CMPT_COUNT];
+        let mut offset = 4;
+        for component in component_info.iter_mut().take(component_count as usize) {
+            component.packed_byte = bytes[offset];
+            component.component_id = bytes[offset + 1];
+            component.vendor_specific1 = u16::from_le_bytes(bytes[offset + 2..offset + 4].try_into().unwrap());
+            component.fw_version.major = bytes[offset + 4];
+            component.fw_version.minor = u16::from_le_bytes(bytes[offset + 5..offset + 7].try_into().unwrap());
+            component.fw_version.variant = bytes[offset + 7];
+            offset += 8;
+        }
+
+        Ok(GetFwVersionResponse {
+            header: GetFwVersionResponseHeader {
+                component_count,
+                _reserved,
+                byte3,
+            },
+            component_info,
+        })
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+/// LSB first Representation of FwUpdateOffer
+pub struct FwUpdateOffer {
+    pub component_info: UpdateOfferComponentInfo, // u32
+    pub firmware_version: FwVersion,              // u32
+    pub vendor_specific: u32,                     // u32
+    pub misc_and_protocol_version: u32,           // u32
+}
+
+impl FwUpdateOffer {
     pub fn new(
         token: HostToken,
         component_id: ComponentId,
@@ -151,258 +244,599 @@ impl FwUpdateOfferCommand {
             misc_and_protocol_version: misc,
         }
     }
-    pub fn new_with_command(
-        token: HostToken,
-        component_id: ComponentId,
-        firmware_version: FwVersion,
-        vendor_specific: u32,
-        command: InformationCodeValues,
-        misc: u32,
-    ) -> Self {
-        Self {
-            component_info: UpdateOfferComponentInfo::new_with_command(token, component_id, command),
+}
+
+impl Default for FwUpdateOffer {
+    fn default() -> Self {
+        Self::new(HostToken::Driver, 0, FwVersion::default(), 0, 0)
+    }
+}
+
+// Convert to bytes
+impl From<&FwUpdateOffer> for [u8; 32] {
+    fn from(command: &FwUpdateOffer) -> Self {
+        let mut bytes = [0u8; 32];
+
+        // Serialize component_info
+        bytes[0] = command.component_info.segment_number;
+        bytes[1] = command.component_info.byte1.packed_byte;
+        bytes[2] = command.component_info.component_id;
+        bytes[3] = command.component_info.token.into();
+
+        // Serialize firmware_version
+        bytes[7] = command.firmware_version.major;
+        bytes[5..7].copy_from_slice(&command.firmware_version.minor.to_le_bytes());
+        bytes[4] = command.firmware_version.variant;
+
+        // Serialize vendor_specific
+        bytes[8..12].copy_from_slice(&command.vendor_specific.to_le_bytes());
+
+        // Serialize misc_and_protocol_version
+        bytes[12..16].copy_from_slice(&command.misc_and_protocol_version.to_le_bytes());
+
+        bytes
+    }
+}
+
+// Convert from bytes
+impl TryFrom<&[u8; 32]> for FwUpdateOffer {
+    type Error = ConversionError;
+
+    fn try_from(bytes: &[u8; 32]) -> Result<Self, Self::Error> {
+        let component_info = UpdateOfferComponentInfo {
+            segment_number: bytes[0],
+            byte1: UpdateOfferComponentInfoByte1 { packed_byte: bytes[1] },
+            component_id: bytes[2],
+            token: HostToken::try_from(bytes[3]).map_err(|_| ConversionError::ByteConversionError)?,
+        };
+
+        let firmware_version = FwVersion {
+            major: bytes[7],
+            minor: u16::from_le_bytes(bytes[5..7].try_into().unwrap()),
+            variant: bytes[4],
+        };
+
+        let vendor_specific = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
+        let misc_and_protocol_version = u32::from_le_bytes(bytes[12..16].try_into().unwrap());
+
+        Ok(FwUpdateOffer {
+            component_info,
             firmware_version,
             vendor_specific,
-            misc_and_protocol_version: misc,
-        }
+            misc_and_protocol_version,
+        })
     }
 }
 
-impl Default for FwUpdateOfferCommand {
-    fn default() -> Self {
-        Self::new(0, 0, FwVersion::default(), 0, 0)
-    }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, BinarySerde)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// MSB first Representation of UpdateOfferComponentInfo
+/// LSB first Representation of UpdateOfferComponentInfo
 pub struct UpdateOfferComponentInfo {
-    pub token: HostToken,
-    pub component_id: ComponentId,
+    pub segment_number: u8,
     pub byte1: UpdateOfferComponentInfoByte1,
-    pub byte0: u8,
+    pub component_id: ComponentId,
+    pub token: HostToken,
 }
 
 impl UpdateOfferComponentInfo {
     pub fn new(token: HostToken, component_id: ComponentId) -> Self {
         Self {
-            token,
-            component_id,
+            segment_number: u8::default(),
             byte1: UpdateOfferComponentInfoByte1::default(),
-            byte0: UpdateOfferComponentInfoByte0::default().into(),
-        }
-    }
-
-    pub fn new_with_command(token: HostToken, component_id: ComponentId, code: InformationCodeValues) -> Self {
-        Self {
-            token,
             component_id,
-            byte1: UpdateOfferComponentInfoByte1::default(),
-            byte0: UpdateOfferComponentInfoByte0::CommandCode(code).into(),
+            token,
         }
     }
 }
 
 impl Default for UpdateOfferComponentInfo {
     fn default() -> Self {
-        Self::new(0, 0)
+        Self::new(HostToken::Driver, 0)
     }
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[binary_serde_bitfield(order = BitfieldBitOrder::MsbFirst)]
 pub struct UpdateOfferComponentInfoByte1 {
-    #[bits(1)]
-    pub force_ignore_version: u8,
-    #[bits(1)]
-    pub force_reset: u8,
-    #[bits(6)]
-    pub reserved_byte1: u8,
+    pub packed_byte: u8, // 8-bits: 6 bits for reserved, 1 bit for force_reset, 1 bit for force_ignore_version
+}
+impl UpdateOfferComponentInfoByte1 {
+    pub fn new(force_ignore_version: bool, force_reset: bool) -> Self {
+        let mut packed_byte = 0;
+        packed_byte |= ((force_ignore_version as u8) << 7) & 0b10000000; // Bit 7
+        packed_byte |= ((force_reset as u8) << 6) & 0b01000000; // Bit 6
+        Self { packed_byte }
+    }
+
+    pub fn reserved(&self) -> u8 {
+        (self.packed_byte >> 2) & 0b00111111
+    }
+
+    pub fn force_ignore_version(&self) -> bool {
+        (self.packed_byte & 0b10000000) != 0
+    }
+
+    pub fn force_reset(&self) -> bool {
+        (self.packed_byte & 0b01000000) != 0
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[repr(u8)]
-pub enum UpdateOfferComponentInfoByte0 {
-    /// default usage
-    Segment(u8),
-    /// Used for Extended Component Information packets
-    CommandCode(InformationCodeValues),
+/// LSB first Representation of OfferInformationComponentInfo
+pub struct OfferInformationComponentInfo {
+    pub code: OfferInformationCodeValues,
+    pub reserved: u8,
+    pub component_id: SpecialComponentIds,
+    pub token: HostToken,
 }
 
-impl Default for UpdateOfferComponentInfoByte0 {
-    fn default() -> Self {
-        Self::Segment(0)
-    }
-}
-
-impl From<UpdateOfferComponentInfoByte0> for u8 {
-    fn from(value: UpdateOfferComponentInfoByte0) -> Self {
-        match value {
-            UpdateOfferComponentInfoByte0::CommandCode(infcode) => u8::from(infcode),
-            UpdateOfferComponentInfoByte0::Segment(num) => num,
+impl OfferInformationComponentInfo {
+    pub fn new(token: HostToken, component_id: SpecialComponentIds, code: OfferInformationCodeValues) -> Self {
+        Self {
+            code,
+            reserved: 0,
+            component_id,
+            token,
         }
     }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+/// LSB first Representation of FwUpdateOfferInformation
+pub struct FwUpdateOfferInformation {
+    pub component_info: OfferInformationComponentInfo,
+    _reserved0: u32,
+    _reserved1: u32,
+    _reserved2: u32,
+}
+
+impl FwUpdateOfferInformation {
+    pub fn new(component_info: OfferInformationComponentInfo) -> Self {
+        Self {
+            component_info,
+            _reserved0: 0,
+            _reserved1: 0,
+            _reserved2: 0,
+        }
+    }
+}
+
+// Convert to bytes
+impl From<&FwUpdateOfferInformation> for [u8; 16] {
+    fn from(info: &FwUpdateOfferInformation) -> Self {
+        let mut bytes = [0u8; 16];
+
+        // Serialize the component_info
+        bytes[0..4].copy_from_slice(&[
+            info.component_info.code.into(),
+            info.component_info.reserved,
+            info.component_info.component_id as u8,
+            info.component_info.token.into(),
+        ]);
+
+        // Serialize the reserved fields
+        bytes[4..8].copy_from_slice(&info._reserved0.to_le_bytes());
+        bytes[8..12].copy_from_slice(&info._reserved1.to_le_bytes());
+        bytes[12..16].copy_from_slice(&info._reserved2.to_le_bytes());
+
+        bytes
+    }
+}
+
+// Convert from bytes
+impl TryFrom<&[u8; 16]> for FwUpdateOfferInformation {
+    type Error = ConversionError;
+
+    fn try_from(bytes: &[u8; 16]) -> Result<Self, Self::Error> {
+        let code = match bytes[0] {
+            0x00 => OfferInformationCodeValues::StartEntireTransaction,
+            0x01 => OfferInformationCodeValues::StartOfferList,
+            0x02 => OfferInformationCodeValues::EndOfferList,
+            _ => return Err(ConversionError::ValueOutOfRange),
+        };
+
+        let reserved = bytes[1];
+        let component_id = SpecialComponentIds::try_from(bytes[2]).map_err(|_| ConversionError::ValueOutOfRange)?;
+        if component_id != SpecialComponentIds::Info {
+            return Err(ConversionError::ValueOutOfRange);
+        }
+        let token = HostToken::try_from(bytes[3])?;
+
+        Ok(FwUpdateOfferInformation {
+            component_info: OfferInformationComponentInfo {
+                code,
+                reserved,
+                component_id,
+                token,
+            },
+            _reserved0: u32::from_le_bytes(
+                bytes[4..8]
+                    .try_into()
+                    .map_err(|_| ConversionError::ByteConversionError)?,
+            ),
+            _reserved1: u32::from_le_bytes(
+                bytes[8..12]
+                    .try_into()
+                    .map_err(|_| ConversionError::ByteConversionError)?,
+            ),
+            _reserved2: u32::from_le_bytes(
+                bytes[12..16]
+                    .try_into()
+                    .map_err(|_| ConversionError::ByteConversionError)?,
+            ),
+        })
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
-pub enum InformationCodeValues {
+pub enum OfferInformationCodeValues {
     StartEntireTransaction = 0x00,
     StartOfferList = 0x01,
     EndOfferList = 0x02,
-    Extended(ExtendedCommandCode),
+    // Vendor specific extensions
+    VendorSpecific(u8),
 }
 
-impl From<InformationCodeValues> for u8 {
-    fn from(value: InformationCodeValues) -> Self {
+impl From<OfferInformationCodeValues> for u8 {
+    fn from(value: OfferInformationCodeValues) -> Self {
         match value {
-            InformationCodeValues::StartEntireTransaction => 0x00,
-            InformationCodeValues::StartOfferList => 0x01,
-            InformationCodeValues::EndOfferList => 0x02,
-            InformationCodeValues::Extended(ExtendedCommandCode::OfferNotifyOnReady) => 0x01,
+            OfferInformationCodeValues::StartEntireTransaction => 0x00,
+            OfferInformationCodeValues::StartOfferList => 0x01,
+            OfferInformationCodeValues::EndOfferList => 0x02,
+            OfferInformationCodeValues::VendorSpecific(val) => val,
         }
     }
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, BinarySerde)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// MSB first Representation of FwUpdateOfferResponse
+/// LSB first Representation of FwUpdateOfferExtended
+pub struct OfferExtendedComponentInfo {
+    pub code: OfferCommandExtendedCodeValues,
+    pub reserved: u8,
+    pub component_id: SpecialComponentIds,
+    pub token: HostToken,
+}
+
+impl OfferExtendedComponentInfo {
+    pub fn new(token: HostToken, component_id: SpecialComponentIds, code: OfferCommandExtendedCodeValues) -> Self {
+        Self {
+            code,
+            reserved: 0,
+            component_id,
+            token,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+/// LSB first Representation of FwUpdateOfferExtended
+pub struct FwUpdateOfferExtended {
+    component_info: OfferExtendedComponentInfo,
+    _reserved0: u32,
+    _reserved1: u32,
+    _reserved2: u32,
+}
+
+impl FwUpdateOfferExtended {
+    pub fn new(component_info: OfferExtendedComponentInfo) -> Self {
+        Self {
+            component_info,
+            _reserved0: 0,
+            _reserved1: 0,
+            _reserved2: 0,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[repr(u8)]
+pub enum OfferCommandExtendedCodeValues {
+    #[default]
+    OfferNotifyOnReady = 0x01,
+    // Vendor specific extensions
+    VendorSpecific(u8),
+}
+
+// Convert to bytes
+impl From<OfferCommandExtendedCodeValues> for u8 {
+    fn from(value: OfferCommandExtendedCodeValues) -> Self {
+        match value {
+            OfferCommandExtendedCodeValues::OfferNotifyOnReady => 0x01,
+            OfferCommandExtendedCodeValues::VendorSpecific(val) => val,
+        }
+    }
+}
+
+// Convert from bytes
+impl From<u8> for OfferCommandExtendedCodeValues {
+    fn from(value: u8) -> Self {
+        match value {
+            0x01 => OfferCommandExtendedCodeValues::OfferNotifyOnReady,
+            val => OfferCommandExtendedCodeValues::VendorSpecific(val),
+        }
+    }
+}
+
+// Convert to bytes
+impl From<&FwUpdateOfferExtended> for [u8; 16] {
+    fn from(command: &FwUpdateOfferExtended) -> Self {
+        let mut bytes = [0u8; 16];
+        // Serialize the component_info
+        bytes[0..4].copy_from_slice(&[
+            command.component_info.code.into(),
+            command.component_info.reserved,
+            command.component_info.component_id as u8,
+            command.component_info.token.into(),
+        ]);
+
+        // Serialize the Reserved fields
+        bytes[4..8].copy_from_slice(&command._reserved0.to_le_bytes());
+        bytes[8..12].copy_from_slice(&command._reserved1.to_le_bytes());
+        bytes[12..16].copy_from_slice(&command._reserved2.to_le_bytes());
+        bytes
+    }
+}
+
+// Convert from bytes
+impl TryFrom<&[u8; 16]> for FwUpdateOfferExtended {
+    type Error = ConversionError;
+
+    fn try_from(bytes: &[u8; 16]) -> Result<Self, Self::Error> {
+        let code = OfferCommandExtendedCodeValues::from(bytes[0]);
+        let reserved = bytes[1];
+        let component_id = SpecialComponentIds::try_from(bytes[2]).map_err(|_| ConversionError::ValueOutOfRange)?;
+        if component_id != SpecialComponentIds::Command {
+            return Err(ConversionError::ValueOutOfRange);
+        }
+        let token = HostToken::try_from(bytes[3])?;
+
+        Ok(FwUpdateOfferExtended {
+            component_info: OfferExtendedComponentInfo {
+                code,
+                reserved,
+                component_id,
+                token,
+            },
+            _reserved0: u32::from_le_bytes(
+                bytes[4..8]
+                    .try_into()
+                    .map_err(|_| ConversionError::ByteConversionError)?,
+            ),
+            _reserved1: u32::from_le_bytes(
+                bytes[8..12]
+                    .try_into()
+                    .map_err(|_| ConversionError::ByteConversionError)?,
+            ),
+            _reserved2: u32::from_le_bytes(
+                bytes[12..16]
+                    .try_into()
+                    .map_err(|_| ConversionError::ByteConversionError)?,
+            ),
+        })
+    }
+}
+
+pub const DEFAULT_DATA_LENGTH: usize = 52; // bytes 8-59 are data bytes (52 total)
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+/// LSB first Representation of FwUpdateContentCommand
+pub struct FwUpdateContentCommand {
+    pub header: FwUpdateContentHeader,
+    pub data: [u8; DEFAULT_DATA_LENGTH],
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+/// LSB first Representation of FwUpdateContentHeader
+pub struct FwUpdateContentHeader {
+    pub flags: u8,
+    pub data_length: u8,
+    pub sequence_num: u16,
+    pub firmware_address: u32,
+}
+
+// Convert to bytes
+impl From<&FwUpdateContentCommand> for [u8; 60] {
+    fn from(command: &FwUpdateContentCommand) -> Self {
+        let mut bytes = [0u8; 60];
+
+        // Serialize header
+        bytes[0] = command.header.flags;
+        bytes[1] = command.header.data_length;
+        bytes[2..4].copy_from_slice(&command.header.sequence_num.to_le_bytes());
+        bytes[4..8].copy_from_slice(&command.header.firmware_address.to_le_bytes());
+
+        // Serialize data
+        bytes[8..].copy_from_slice(&command.data);
+
+        bytes
+    }
+}
+
+// Convert from bytes
+impl TryFrom<&[u8; 60]> for FwUpdateContentCommand {
+    type Error = ConversionError;
+
+    fn try_from(bytes: &[u8; 60]) -> Result<Self, Self::Error> {
+        let flags = bytes[0];
+        let data_length = bytes[1];
+        let sequence_num = u16::from_le_bytes(bytes[2..4].try_into().unwrap());
+        let firmware_address = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+
+        let mut data = [0u8; DEFAULT_DATA_LENGTH];
+        data.copy_from_slice(&bytes[8..]);
+
+        Ok(FwUpdateContentCommand {
+            header: FwUpdateContentHeader {
+                flags,
+                data_length,
+                sequence_num,
+                firmware_address,
+            },
+            data,
+        })
+    }
+}
+
+pub const FW_UPDATE_FLAG_FIRST_BLOCK: u8 = 0x80;
+pub const FW_UPDATE_FLAG_LAST_BLOCK: u8 = 0x40;
+
+#[repr(u8)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum HostToken {
+    #[default]
+    Driver = 0xA0,
+    Tool = 0xB0,
+}
+
+// Convert to byte
+impl From<HostToken> for u8 {
+    fn from(token: HostToken) -> Self {
+        match token {
+            HostToken::Driver => 0xA0,
+            HostToken::Tool => 0xB0,
+        }
+    }
+}
+
+// Convert from byte
+impl TryFrom<u8> for HostToken {
+    type Error = ConversionError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0xA0 => Ok(HostToken::Driver),
+            0xB0 => Ok(HostToken::Tool),
+            _ => Err(ConversionError::ByteConversionError),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+/// LSB first Representation of FwUpdateOfferResponse
 pub struct FwUpdateOfferResponse {
-    _reserved: [u8; 3],                 // bytes 13-15
-    pub status: CfuOfferStatus,         //byte 12
-    _reserved2: [u8; 3],                // bytes 9-11
-    pub rejectreasoncode: RejectReason, //byte8
-    _reserved3: [u8; 4],                // bytes 4-7
-    pub token: HostToken,               // byte3
-    _reserved4: [u8; 3],                // bytes 0-2
+    _reserved0: [u8; 3],                  // bytes 0-2
+    pub token: HostToken,                 // byte 3
+    _reserved1: [u8; 4],                  // bytes 4-7
+    pub reject_reason: OfferRejectReason, // byte 8
+    _reserved2: [u8; 3],                  // bytes 9-11
+    pub status: OfferStatus,              // byte 12
+    _reserved3: [u8; 3],                  // bytes 13-15
 }
 
 impl FwUpdateOfferResponse {
     pub fn new_accept(token: HostToken) -> Self {
         Self {
             token,
-            rejectreasoncode: RejectReason::OfferSwapPending, // not used for success cases
-            status: CfuOfferStatus::Accept,
-            _reserved: [0; 3],
+            reject_reason: OfferRejectReason::SwapPending, // not used for success cases
+            status: OfferStatus::Accept,
+            _reserved0: [0; 3],
+            _reserved1: [0; 4],
             _reserved2: [0; 3],
-            _reserved3: [0; 4],
-            _reserved4: [0; 3],
+            _reserved3: [0; 3],
         }
     }
-    pub fn new_with_failure(token: HostToken, rejectreasoncode: RejectReason, status: CfuOfferStatus) -> Self {
+
+    pub fn new_with_failure(token: HostToken, reject_reason: OfferRejectReason, status: OfferStatus) -> Self {
         Self {
             token,
-            rejectreasoncode,
+            reject_reason,
             status,
-            _reserved: [0; 3],
+            _reserved0: [0; 3],
+            _reserved1: [0; 4],
             _reserved2: [0; 3],
-            _reserved3: [0; 4],
-            _reserved4: [0; 3],
+            _reserved3: [0; 3],
         }
+    }
+}
+
+// Convert to bytes
+impl From<&FwUpdateOfferResponse> for [u8; 16] {
+    fn from(response: &FwUpdateOfferResponse) -> Self {
+        let mut buffer = [0u8; 16];
+        buffer[0..3].copy_from_slice(&response._reserved0);
+        buffer[3] = response.token.into();
+        buffer[4..8].copy_from_slice(&response._reserved1);
+        buffer[8] = response.reject_reason.into();
+        buffer[9..12].copy_from_slice(&response._reserved2);
+        buffer[12] = response.status.into();
+        buffer[13..16].copy_from_slice(&response._reserved3);
+        buffer
+    }
+}
+
+// Convert from bytes
+impl TryFrom<[u8; 16]> for FwUpdateOfferResponse {
+    type Error = ConversionError;
+
+    fn try_from(buffer: [u8; 16]) -> Result<Self, Self::Error> {
+        Ok(Self {
+            _reserved0: [buffer[0], buffer[1], buffer[2]],
+            token: HostToken::try_from(buffer[3]).map_err(|_| ConversionError::ByteConversionError)?,
+            _reserved1: [buffer[4], buffer[5], buffer[6], buffer[7]],
+            reject_reason: OfferRejectReason::try_from(buffer[8]).map_err(|_| ConversionError::ByteConversionError)?,
+            _reserved2: [buffer[9], buffer[10], buffer[11]],
+            status: OfferStatus::try_from(buffer[12]).map_err(|_| ConversionError::ByteConversionError)?,
+            _reserved3: [buffer[13], buffer[14], buffer[15]],
+        })
     }
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
-pub enum RejectReason {
+pub enum OfferRejectReason {
     #[default]
-    RejectOldFw = 0x00,
-    RejectInvComponent = 0x01,
-    OfferSwapPending = 0x02,
+    /// The Offer was rejected because the Major and Minor Version is not newer than the current image.
+    OldFw = 0x00,
+    /// The Offer was rejected due a mismatch of Component ID.
+    InvalidComponent = 0x01,
+    /// The Offer was rejected because a previous update has been downloaded but not yet applied.
+    SwapPending = 0x02,
+    /// Vendor specific extesions
     VendorSpecific(u8),
 }
 
-impl BinarySerde for RejectReason {
-    const SERIALIZED_SIZE: usize = u8::SERIALIZED_SIZE;
-    type RecursiveArray = RecursiveArraySingleItem<u8>;
-    fn binary_serialize(&self, buffer: &mut [u8], _endianness: binary_serde::Endianness) {
-        buffer[0] = (*self).into();
-    }
-
-    fn binary_deserialize(
-        buffer: &[u8],
-        _endianness: binary_serde::Endianness,
-    ) -> Result<Self, binary_serde::DeserializeError> {
-        Ok(match buffer[0] {
-            0x00 => RejectReason::RejectOldFw,
-            0x01 => RejectReason::RejectInvComponent,
-            0x02 => RejectReason::OfferSwapPending,
-            val if val >= 0xEF => RejectReason::VendorSpecific(val),
-            _ => {
-                return Err(binary_serde::DeserializeError::InvalidEnumValue {
-                    enum_name: "RejectReason",
-                })
-            }
-        })
-    }
-}
-
-impl From<RejectReason> for u8 {
-    fn from(value: RejectReason) -> Self {
+// Convert to byte
+impl From<OfferRejectReason> for u8 {
+    fn from(value: OfferRejectReason) -> Self {
         match value {
-            RejectReason::RejectOldFw => 0x00,
-            RejectReason::RejectInvComponent => 0x01,
-            RejectReason::OfferSwapPending => 0x02,
-            // TODO limit this to 0xE0 to 0xFF only
-            RejectReason::VendorSpecific(val) => val,
+            OfferRejectReason::OldFw => 0x00,
+            OfferRejectReason::InvalidComponent => 0x01,
+            OfferRejectReason::SwapPending => 0x02,
+            OfferRejectReason::VendorSpecific(val) => val,
         }
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[repr(u8)]
-pub enum CfuCommands {
-    OfferInfoStartEntireTransaction,
-    OfferInfoStartStartOfferList,
-    FwUpdateOffer,
-}
+// Convert from byte
+impl TryFrom<u8> for OfferRejectReason {
+    type Error = ConversionError;
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, BinarySerde)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[repr(u8)]
-pub enum ExtendedCommandCode {
-    #[default]
-    OfferNotifyOnReady = 0x01,
-}
-
-pub type HostToken = u8;
-#[derive(Copy, Clone, Debug, PartialEq, Eq, BinarySerde)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// MSB first Representation of ExtendedCommandPacket
-pub struct ExtendedCommandPacketResponse {
-    _reserved: [u8; 3],              // bytes 13-15
-    pub status: CfuOfferStatus,      // byte 12
-    _reserved2: [u8; 3],             // bytes 9-11
-    pub reject_reason: RejectReason, // byte 8
-    _reserved3: [u8; 4],             // bytes 4-7
-    pub token: HostToken,            // byte 3
-    _reserved4: [u8; 3],             // bytes 0-2
-}
-
-impl ExtendedCommandPacketResponse {
-    pub fn new(status: CfuOfferStatus, reject_reason: RejectReason, token: HostToken) -> Self {
-        Self {
-            status,
-            reject_reason,
-            token,
-            _reserved: [0; 3],
-            _reserved2: [0; 3],
-            _reserved3: [0; 4],
-            _reserved4: [0; 3],
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x00 => Ok(OfferRejectReason::OldFw),
+            0x01 => Ok(OfferRejectReason::InvalidComponent),
+            0x02 => Ok(OfferRejectReason::SwapPending),
+            val if val >= 0xE0 => Ok(OfferRejectReason::VendorSpecific(val)),
+            _ => Err(ConversionError::ValueOutOfRange),
         }
     }
 }
 
-#[derive(BinarySerde, Copy, Clone, Debug, Default, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Ord, PartialOrd, Hash)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
-pub enum CfuOfferStatus {
+pub enum OfferStatus {
     #[default]
     /// Component has decided to skip the offer, host must offer it again later
     Skip = 0x00,
@@ -412,16 +846,47 @@ pub enum CfuOfferStatus {
     Reject = 0x02,
     /// Component is busy, host must wait until the component is ready
     Busy = 0x03,
-    /// Used when ComponentId is 0xFE
-    Command = 0x04,
-    /// Offer reqyest isn't recognized
+    /// Issued after receipt of OFFER_NOTIFY_ON_READY request when the Primary Component is ready to accept Offers.
+    CommandReady = 0x04,
+    /// Not supported command
     CmdNotSupported = 0xFF,
 }
 
-#[derive(BinarySerde, Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+// Convert to byte
+impl From<OfferStatus> for u8 {
+    fn from(value: OfferStatus) -> Self {
+        match value {
+            OfferStatus::Skip => 0x00,
+            OfferStatus::Accept => 0x01,
+            OfferStatus::Reject => 0x02,
+            OfferStatus::Busy => 0x03,
+            OfferStatus::CommandReady => 0x04,
+            OfferStatus::CmdNotSupported => 0xFF,
+        }
+    }
+}
+
+// Convert from byte
+impl TryFrom<u8> for OfferStatus {
+    type Error = ConversionError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x00 => Ok(OfferStatus::Skip),
+            0x01 => Ok(OfferStatus::Accept),
+            0x02 => Ok(OfferStatus::Reject),
+            0x03 => Ok(OfferStatus::Busy),
+            0x04 => Ok(OfferStatus::CommandReady),
+            0xFF => Ok(OfferStatus::CmdNotSupported),
+            _ => Err(ConversionError::ByteConversionError),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
-pub enum CfuOfferResponseStatus {
+pub enum CfuUpdateContentResponseStatus {
     #[default]
     /// Request completed successfully
     Success = 0x00,
@@ -450,63 +915,97 @@ pub enum CfuOfferResponseStatus {
     ErrorInvalid = 0x0B,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, BinarySerde)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// MSB first Representation of FwUpdateContentCommand
-pub struct FwUpdateContentCommand {
-    pub data: [u8; DEFAULT_DATA_LENGTH],
-    pub header: FwUpdateContentHeader,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, BinarySerde)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// MSB first Representation of FwUpdateContentHeader
-pub struct FwUpdateContentHeader {
-    pub firmware_address: u32,
-    pub sequence_num: u16,
-    pub data_length: u8,
-    pub flags: FwUpdateFlags,
-}
-
-#[derive(BinarySerde, Copy, Clone, Debug, Default, PartialEq, Eq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[repr(u8)]
-pub enum FwUpdateFlags {
-    #[default]
-    FirstBlock,
-    LastBlock,
-    FirstAndLastBlock,
-    None,
-}
-impl From<FwUpdateFlags> for u8 {
-    fn from(value: FwUpdateFlags) -> Self {
+// Convert to byte
+impl From<CfuUpdateContentResponseStatus> for u8 {
+    fn from(value: CfuUpdateContentResponseStatus) -> Self {
         match value {
-            FwUpdateFlags::FirstBlock => 0x80,
-            FwUpdateFlags::LastBlock => 0x40,
-            FwUpdateFlags::FirstAndLastBlock => 0x80 | 0x40,
-            FwUpdateFlags::None => 0,
+            CfuUpdateContentResponseStatus::Success => 0x00,
+            CfuUpdateContentResponseStatus::ErrorPrepare => 0x01,
+            CfuUpdateContentResponseStatus::ErrorWrite => 0x02,
+            CfuUpdateContentResponseStatus::ErrorComplete => 0x03,
+            CfuUpdateContentResponseStatus::ErrorVerify => 0x04,
+            CfuUpdateContentResponseStatus::ErrorCrc => 0x05,
+            CfuUpdateContentResponseStatus::ErrorSignature => 0x06,
+            CfuUpdateContentResponseStatus::ErrorVersion => 0x07,
+            CfuUpdateContentResponseStatus::SwapPending => 0x08,
+            CfuUpdateContentResponseStatus::ErrorInvalidAddr => 0x09,
+            CfuUpdateContentResponseStatus::ErrorNoOffer => 0x0A,
+            CfuUpdateContentResponseStatus::ErrorInvalid => 0x0B,
         }
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, BinarySerde)]
+// Convert from byte
+impl TryFrom<u8> for CfuUpdateContentResponseStatus {
+    type Error = ConversionError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x00 => Ok(CfuUpdateContentResponseStatus::Success),
+            0x01 => Ok(CfuUpdateContentResponseStatus::ErrorPrepare),
+            0x02 => Ok(CfuUpdateContentResponseStatus::ErrorWrite),
+            0x03 => Ok(CfuUpdateContentResponseStatus::ErrorComplete),
+            0x04 => Ok(CfuUpdateContentResponseStatus::ErrorVerify),
+            0x05 => Ok(CfuUpdateContentResponseStatus::ErrorCrc),
+            0x06 => Ok(CfuUpdateContentResponseStatus::ErrorSignature),
+            0x07 => Ok(CfuUpdateContentResponseStatus::ErrorVersion),
+            0x08 => Ok(CfuUpdateContentResponseStatus::SwapPending),
+            0x09 => Ok(CfuUpdateContentResponseStatus::ErrorInvalidAddr),
+            0x0A => Ok(CfuUpdateContentResponseStatus::ErrorNoOffer),
+            0x0B => Ok(CfuUpdateContentResponseStatus::ErrorInvalid),
+            _ => Err(ConversionError::ByteConversionError),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// MSB first Representation of FwUpdateContentResponse
+/// LSB first Representation of FwUpdateContentResponse
 pub struct FwUpdateContentResponse {
-    _reserved2: [u8; 11],
-    pub status: CfuOfferResponseStatus,
-    _reserved1: u16,
-    pub sequence: u16,
+    pub sequence: u16,                          // bytes 0-1
+    _reserved0: u16,                            // bytes 2-3
+    pub status: CfuUpdateContentResponseStatus, // byte 4
+    _reserved1: [u8; 11],                       // bytes 5-15
 }
 
 impl FwUpdateContentResponse {
-    pub fn new(sequence: u16, status: CfuOfferResponseStatus) -> Self {
+    pub fn new(sequence: u16, status: CfuUpdateContentResponseStatus) -> Self {
         Self {
             sequence,
             status,
-            _reserved1: 0,
-            _reserved2: [0; 11],
+            _reserved0: 0,
+            _reserved1: [0; 11],
         }
+    }
+}
+
+// Convert to bytes
+impl From<&FwUpdateContentResponse> for [u8; 16] {
+    fn from(response: &FwUpdateContentResponse) -> Self {
+        let mut buffer = [0u8; 16];
+        buffer[0..2].copy_from_slice(&response.sequence.to_le_bytes());
+        buffer[2..4].copy_from_slice(&response._reserved0.to_le_bytes());
+        buffer[4] = response.status.into();
+        buffer[5..16].copy_from_slice(&response._reserved1);
+        buffer
+    }
+}
+
+// Convert from bytes
+impl TryFrom<[u8; 16]> for FwUpdateContentResponse {
+    type Error = ConversionError;
+
+    fn try_from(buffer: [u8; 16]) -> Result<Self, Self::Error> {
+        Ok(Self {
+            sequence: u16::from_le_bytes([buffer[0], buffer[1]]),
+            _reserved0: u16::from_le_bytes([buffer[2], buffer[3]]),
+            status: CfuUpdateContentResponseStatus::try_from(buffer[4])
+                .map_err(|_| ConversionError::ByteConversionError)?,
+            _reserved1: [
+                buffer[5], buffer[6], buffer[7], buffer[8], buffer[9], buffer[10], buffer[11], buffer[12], buffer[13],
+                buffer[14], buffer[15],
+            ],
+        })
     }
 }
 
@@ -524,10 +1023,181 @@ pub enum CfuProtocolError {
     BadResponse,
     /// WriterError
     WriterError(CfuWriterError),
-    /// ResponseError
-    CfuResponseError(CfuOfferResponseStatus),
-    /// StatusError
-    CfuStatusError(CfuOfferStatus),
+    /// ContentResponseError
+    CfuContentUpdateResponseError(CfuUpdateContentResponseStatus),
+    /// OfferStatusError
+    CfuOfferStatusError(OfferStatus),
 }
 
-pub const DEFAULT_DATA_LENGTH: usize = 52; // bytes 8-59 are data bytes (52 total)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Serialiation and Deserialization tests for FwUpdateOffer
+    #[test]
+    fn test_fwupdate_offer_serialization_deserialization() {
+        // Create an instance of FwUpdateOffer
+        let offer_command_orig = FwUpdateOffer {
+            component_info: UpdateOfferComponentInfo::new(HostToken::Driver, 1),
+            firmware_version: FwVersion {
+                major: 1,
+                minor: 2,
+                variant: 3,
+            },
+            vendor_specific: 0x2,
+            misc_and_protocol_version: 0x87654321,
+        };
+
+        // Serialize the offer command to a byte array
+        let offer_command_serialized: [u8; 32] = (&offer_command_orig).into();
+
+        // Deserialize the byte array back to a FwUpdateOffer instance
+        let offer_command_deserialized = FwUpdateOffer::try_from(&offer_command_serialized);
+
+        // Compare both
+        assert_eq!(offer_command_orig, offer_command_deserialized.unwrap());
+    }
+
+    // Serialiation and Deserialization tests for FwUpdateOfferExtended
+    #[test]
+    fn test_fwupdate_offer_extended_serialization_deserialization() {
+        // Create an instance of FwUpdateOfferExtended
+        let offer_extended_command_orig = FwUpdateOfferExtended {
+            component_info: OfferExtendedComponentInfo::new(
+                HostToken::Driver,
+                SpecialComponentIds::Command,
+                OfferCommandExtendedCodeValues::OfferNotifyOnReady,
+            ),
+            _reserved0: 0x12345678,
+            _reserved1: 0x87654321,
+            _reserved2: 0x12345678,
+        };
+
+        // Serialize the extended command to a byte array
+        let offer_extended_command_serialized: [u8; 16] = (&offer_extended_command_orig).into();
+
+        // Deserialize the byte array back to a FwUpdateOfferExtended instance
+        let offer_extended_command_deserialized = FwUpdateOfferExtended::try_from(&offer_extended_command_serialized);
+
+        // Compare both
+        assert_eq!(
+            offer_extended_command_orig,
+            offer_extended_command_deserialized.unwrap()
+        );
+    }
+
+    // Serialiation and Deserialization tests for FwUpdateContentCommand
+    #[test]
+    fn test_fwupdate_content_command_serialization_deserialization() {
+        // Create an instance of FwUpdateContentCommand
+        let content_command_orig = FwUpdateContentCommand {
+            header: FwUpdateContentHeader {
+                flags: FW_UPDATE_FLAG_FIRST_BLOCK,
+                data_length: DEFAULT_DATA_LENGTH as u8,
+                sequence_num: 0x1234,
+                firmware_address: 0x5678,
+            },
+            data: [0x01; DEFAULT_DATA_LENGTH],
+        };
+
+        // Serialize the content command to a byte array
+        let content_command_serialized: [u8; 60] = (&content_command_orig).into();
+
+        // Deserialize the byte array back to a FwUpdateContentCommand instance
+        let content_command_deserialized = FwUpdateContentCommand::try_from(&content_command_serialized);
+
+        // Compare both
+        assert_eq!(content_command_orig, content_command_deserialized.unwrap());
+    }
+
+    // Serialization and Deserialization tests for FwUpdateOfferInformation
+    #[test]
+    fn test_fwupdate_offer_information_serialization_deserialization() {
+        // Create an instance of FwUpdateOfferInformation
+        let offer_info_orig = FwUpdateOfferInformation {
+            component_info: OfferInformationComponentInfo::new(
+                HostToken::Driver,
+                SpecialComponentIds::Info,
+                OfferInformationCodeValues::StartEntireTransaction,
+            ),
+            _reserved0: 0x12345678,
+            _reserved1: 0x87654321,
+            _reserved2: 0x12345678,
+        };
+
+        // Serialize the offer information to a byte array
+        let offer_info_serialized: [u8; 16] = (&offer_info_orig).into();
+
+        // Deserialize the byte array back to a FwUpdateOfferInformation instance
+        let offer_info_deserialized = FwUpdateOfferInformation::try_from(&offer_info_serialized);
+
+        // Compare both
+        assert_eq!(offer_info_orig, offer_info_deserialized.unwrap());
+    }
+
+    // Serialiation and Deserialization tests for GetFwVersionResponse
+    #[test]
+    fn test_get_fw_version_response_serialization_deserialization() {
+        // Create an instance of GetFwVersionResponse
+        let fw_version = FwVersion {
+            major: 1,
+            minor: 2,
+            variant: 3,
+        };
+
+        let mut component_info = [FwVerComponentInfo::default(); MAX_CMPT_COUNT];
+        component_info[0] = FwVerComponentInfo::new(fw_version, 1);
+        component_info[1] = FwVerComponentInfo::new(fw_version, 2);
+        component_info[2] = FwVerComponentInfo::new(fw_version, 3);
+
+        let fwversion_response_orig = GetFwVersionResponse {
+            header: GetFwVersionResponseHeader {
+                component_count: 3,
+                _reserved: 54,
+                byte3: GetFwVerRespHeaderByte3::NoSpecialFlags,
+            },
+            component_info,
+        };
+
+        // Serialize the fwversion_response_orig to a byte array
+        let fwversion_response_serialized: [u8; 60] = (&fwversion_response_orig).into();
+
+        // Deserialize the byte array back to a GetFwVersionResponse instance
+        let fwversion_response_deserialized = GetFwVersionResponse::try_from(&fwversion_response_serialized);
+
+        //compare both
+        assert_eq!(fwversion_response_orig, fwversion_response_deserialized.unwrap());
+    }
+
+    // Serialization and Deserialization tests for FwUpdateOfferResponse
+    #[test]
+    fn test_fwupdate_offer_response_serialization_deserialization() {
+        // Create an instance of FwUpdateOfferResponse
+        let offer_response_orig = FwUpdateOfferResponse::new_accept(HostToken::Driver);
+
+        // Serialize the offer_response_orig to a byte array
+        let offer_response_serialized: [u8; 16] = (&offer_response_orig).into();
+
+        // Deserialize the byte array back to a FwUpdateOfferResponse instance
+        let offer_response_deserialized = FwUpdateOfferResponse::try_from(offer_response_serialized).unwrap();
+
+        // Compare both
+        assert_eq!(offer_response_orig, offer_response_deserialized);
+    }
+
+    // Serialization and Deserialization tests for FwUpdateContentResponse
+    #[test]
+    fn test_fwupdate_content_response_serialization_deserialization() {
+        // Create an instance of FwUpdateContentResponse
+        let content_response_orig = FwUpdateContentResponse::new(0x1234, CfuUpdateContentResponseStatus::Success);
+
+        // Serialize the content_response_orig to a byte array
+        let content_response_serialized: [u8; 16] = (&content_response_orig).into();
+
+        // Deserialize the byte array back to a FwUpdateContentResponse instance
+        let content_response_deserialized = FwUpdateContentResponse::try_from(content_response_serialized).unwrap();
+
+        // Compare both
+        assert_eq!(content_response_orig, content_response_deserialized);
+    }
+}

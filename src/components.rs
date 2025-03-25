@@ -10,10 +10,8 @@ pub trait CfuComponentInfo {
     /// Not async as this should be an element of struct that implements this trait
     fn get_component_id(&self) -> ComponentId;
     /// Validate the CFU offer for the component
-    /// returns a CfuOfferResponseStatus with additional info on Reject Reason in the Err case.
-    fn is_offer_valid(
-        &self,
-    ) -> impl Future<Output = Result<CfuOfferResponseStatus, (CfuOfferResponseStatus, RejectReason)>>;
+    /// returns an OfferStatus with additional info on Reject Reason in the Err case.
+    fn is_offer_valid(&self) -> impl Future<Output = Result<OfferStatus, (OfferStatus, OfferRejectReason)>>;
     /// Returns whether or not this component is a primary component
     /// Not async as this should be an element of struct that implements this trait
     /// Default implementation returns false,
