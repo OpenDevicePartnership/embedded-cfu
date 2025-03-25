@@ -49,6 +49,24 @@ pub enum CfuWriterError {
     ByteConversionError,
     Other,
 }
+pub trait CfuWriterMut {
+    /// writes a chunk of data to a component and reads back to another buffer
+    fn cfu_write_read(
+        &mut self,
+        mem_offset: Option<usize>,
+        data: &[u8],
+        read: &mut [u8],
+    ) -> impl Future<Output = Result<(), CfuWriterError>>;
+    /// Fills a given buffer with data from the component
+    fn cfu_read(
+        &mut self,
+        mem_offset: Option<usize>,
+        read: &mut [u8],
+    ) -> impl Future<Output = Result<(), CfuWriterError>>;
+    /// Writes a given buffer of data to a component
+    fn cfu_write(&mut self, mem_offset: Option<usize>, data: &[u8])
+        -> impl Future<Output = Result<(), CfuWriterError>>;
+}
 
 /// Trait to define R/W behavior for driver that can talk to a CFU component or client
 pub trait CfuWriter {
