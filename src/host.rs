@@ -1,5 +1,3 @@
-use binary_serde::{BinarySerde, DeserializeError, Endianness};
-
 use super::*;
 
 /// CfuHostStates trait defines behavior needed for a Cfu Host to process available Cfu Offers
@@ -81,14 +79,12 @@ impl<W: CfuWriter> CfuUpdateContent<W> for CfuUpdater {
             .await
             .map_err(CfuProtocolError::WriterError)?;
 
-        let deser = FwUpdateContentResponse::binary_deserialize(&offer_resp, binary_serde::Endianness::Little)
-            .map_err(|DeserializeError::InvalidEnumValue { enum_name }| {
-                error!("deserializing error for: {:?}", enum_name);
-                CfuProtocolError::WriterError(CfuWriterError::ByteConversionError)
-            })?;
+        let deser = FwUpdateContentResponse::try_from(offer_resp)
+            .map_err(|_| CfuProtocolError::WriterError(CfuWriterError::ByteConversionError))?;
+
         let status = deser.status;
-        if status != CfuOfferResponseStatus::Success {
-            return Err(CfuProtocolError::CfuResponseError(status));
+        if status != CfuUpdateContentResponseStatus::Success {
+            return Err(CfuProtocolError::CfuContentUpdateResponseError(status));
         }
 
         let total_bytes: usize = image.get_total_size();
@@ -97,7 +93,7 @@ impl<W: CfuWriter> CfuUpdateContent<W> for CfuUpdater {
         let remainder = total_bytes % chunk_size;
 
         // Read and process data in chunks so as to not over-burden memory resources
-        let mut resp = FwUpdateContentResponse::new(0, CfuOfferResponseStatus::ErrorInvalid);
+        let mut resp = FwUpdateContentResponse::new(0, CfuUpdateContentResponseStatus::ErrorInvalid);
         for i in 0..num_chunks {
             let mut chunk = [0u8; DEFAULT_DATA_LENGTH];
             let address_offset = i * DEFAULT_DATA_LENGTH + base_offset;
@@ -126,7 +122,7 @@ impl<W: CfuWriter> CfuUpdateContent<W> for CfuUpdater {
             }
             .map_err(CfuProtocolError::WriterError)?;
             // if no errors in processing the data block, check the response
-            if r.status != CfuOfferResponseStatus::Success {
+            if r.status != CfuUpdateContentResponseStatus::Success {
                 return Err(CfuProtocolError::UpdateError(cmpt_id));
             }
             resp = r;
@@ -148,24 +144,23 @@ impl<W: CfuWriter> CfuUpdateContent<W> for CfuUpdater {
     ) -> Result<FwUpdateContentResponse, CfuWriterError> {
         let cmd = FwUpdateContentCommand {
             header: FwUpdateContentHeader {
-                sequence_num: 0,
+                flags: FW_UPDATE_FLAG_FIRST_BLOCK,
                 data_length: DEFAULT_DATA_LENGTH as u8,
-                flags: FwUpdateFlags::FirstBlock,
+                sequence_num: 0,
                 firmware_address: 0,
             },
             data: chunk,
         };
-        let mut cmd_bytes = [0u8; FwUpdateContentCommand::SERIALIZED_SIZE];
-        cmd.binary_serialize(&mut cmd_bytes, Endianness::Little);
+        let cmd_bytes: [u8; 60] = (&cmd).into();
         let offset = 0;
-        let mut resp_buf = [0u8; FwUpdateContentResponse::SERIALIZED_SIZE];
+        let mut resp_buf = [0u8; core::mem::size_of::<FwUpdateContentResponse>()];
         w.cfu_write_read(Some(offset), &cmd_bytes, &mut resp_buf)
             .await
             .map_err(|_| CfuWriterError::StorageError)?;
 
-        FwUpdateContentResponse::binary_deserialize(&resp_buf, Endianness::Little)
-            .map_err(|_| CfuWriterError::ByteConversionError)
+        FwUpdateContentResponse::try_from(resp_buf).map_err(|_| CfuWriterError::ByteConversionError)
     }
+
     /// Build and send UpdateOfferContent command, no special flags
     async fn process_middle_data_block(
         &mut self,
@@ -175,23 +170,21 @@ impl<W: CfuWriter> CfuUpdateContent<W> for CfuUpdater {
     ) -> Result<FwUpdateContentResponse, CfuWriterError> {
         let cmd = FwUpdateContentCommand {
             header: FwUpdateContentHeader {
-                sequence_num: seq_num as u16,
+                flags: 0,
                 data_length: DEFAULT_DATA_LENGTH as u8,
-                flags: FwUpdateFlags::None,
+                sequence_num: seq_num as u16,
                 firmware_address: 0,
             },
             data: chunk,
         };
-        let mut cmd_bytes = [0u8; FwUpdateContentCommand::SERIALIZED_SIZE];
-        cmd.binary_serialize(&mut cmd_bytes, Endianness::Little);
+        let cmd_bytes: [u8; 60] = (&cmd).into();
         let offset = seq_num * DEFAULT_DATA_LENGTH;
-        let mut resp_buf = [0u8; FwUpdateContentResponse::SERIALIZED_SIZE];
+        let mut resp_buf = [0u8; core::mem::size_of::<FwUpdateContentResponse>()];
         w.cfu_write_read(Some(offset), &cmd_bytes, &mut resp_buf)
             .await
             .map_err(|_| CfuWriterError::StorageError)?;
 
-        FwUpdateContentResponse::binary_deserialize(&resp_buf, Endianness::Little)
-            .map_err(|_| CfuWriterError::ByteConversionError)
+        FwUpdateContentResponse::try_from(resp_buf).map_err(|_| CfuWriterError::ByteConversionError)
     }
     /// Build and send UpdateOfferContent command with last block flag
     async fn process_last_data_block(
@@ -202,22 +195,20 @@ impl<W: CfuWriter> CfuUpdateContent<W> for CfuUpdater {
     ) -> Result<FwUpdateContentResponse, CfuWriterError> {
         let cmd = FwUpdateContentCommand {
             header: FwUpdateContentHeader {
+                flags: FW_UPDATE_FLAG_LAST_BLOCK,
                 sequence_num: seq_num as u16,
                 data_length: DEFAULT_DATA_LENGTH as u8,
-                flags: FwUpdateFlags::LastBlock,
                 firmware_address: 0,
             },
             data: chunk,
         };
-        let mut cmd_bytes = [0u8; FwUpdateContentCommand::SERIALIZED_SIZE];
-        cmd.binary_serialize(&mut cmd_bytes, Endianness::Little);
+        let cmd_bytes: [u8; 60] = (&cmd).into();
         let offset = seq_num * DEFAULT_DATA_LENGTH;
-        let mut resp_buf = [0u8; FwUpdateContentResponse::SERIALIZED_SIZE];
+        let mut resp_buf = [0u8; core::mem::size_of::<FwUpdateContentResponse>()];
         w.cfu_write_read(Some(offset), &cmd_bytes, &mut resp_buf)
             .await
             .map_err(|_| CfuWriterError::StorageError)?;
 
-        FwUpdateContentResponse::binary_deserialize(&resp_buf, Endianness::Little)
-            .map_err(|_| CfuWriterError::ByteConversionError)
+        FwUpdateContentResponse::try_from(resp_buf).map_err(|_| CfuWriterError::ByteConversionError)
     }
 }
