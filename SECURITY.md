@@ -53,6 +53,7 @@ various actors that it cannot be made immediately public.
 In this case, security issues will fall under an embargo.
 
 An embargo can be called for in various cases:
+
 - when disclosing the issue without simultaneously providing a mitigation
   would seriously endanger users,
 - when producing a fix requires coordinating between multiple actors (such as
