@@ -23,6 +23,23 @@ pub struct FwVersion {
     pub major: u8,
 }
 
+// Explicit conversions for FwVersion and u32
+impl FwVersion {
+    pub fn new(fw_version: u32) -> Self {
+        Self {
+            variant: (fw_version & 0xFF) as u8,
+            minor: ((fw_version >> 8) & 0xFFFF) as u16,
+            major: ((fw_version >> 24) & 0xFF) as u8,
+        }
+    }
+}
+
+impl From<FwVersion> for u32 {
+    fn from(ver: FwVersion) -> Self {
+        ((ver.major as u32) << 24) | ((ver.minor as u32) << 8) | ver.variant as u32
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// LSB first Representation of GetFwVersionResponse
