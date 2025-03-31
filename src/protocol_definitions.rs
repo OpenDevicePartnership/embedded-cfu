@@ -712,6 +712,8 @@ pub enum HostToken {
     #[default]
     Driver = 0xA0,
     Tool = 0xB0,
+    // Allow Vendor Specific values
+    VendorSpecific(u8),
 }
 
 // Convert to byte
@@ -720,6 +722,7 @@ impl From<HostToken> for u8 {
         match token {
             HostToken::Driver => 0xA0,
             HostToken::Tool => 0xB0,
+            HostToken::VendorSpecific(val) => val,
         }
     }
 }
@@ -732,7 +735,7 @@ impl TryFrom<u8> for HostToken {
         match value {
             0xA0 => Ok(HostToken::Driver),
             0xB0 => Ok(HostToken::Tool),
-            _ => Err(ConversionError::ByteConversionError),
+            val => Ok(HostToken::VendorSpecific(val)),
         }
     }
 }
@@ -1133,7 +1136,7 @@ mod tests {
         // Create an instance of FwUpdateOfferInformation
         let offer_info_orig = FwUpdateOfferInformation {
             component_info: OfferInformationComponentInfo::new(
-                HostToken::Driver,
+                HostToken::VendorSpecific(0xFE), // use VendorSpecific to test the conversion
                 SpecialComponentIds::Info,
                 OfferInformationCodeValues::StartEntireTransaction,
             ),
