@@ -66,8 +66,11 @@ pub trait CfuWriterMut {
         read: &mut [u8],
     ) -> impl Future<Output = Result<(), CfuWriterError>>;
     /// Writes a given buffer of data to a component
+    /// Note: we don't need cfu_write as cfu_storage may replace it.
     fn cfu_write(&mut self, mem_offset: Option<usize>, data: &[u8])
         -> impl Future<Output = Result<(), CfuWriterError>>;
+    /// Manages erasing sectors and writing pages into flash based on the CFU offset
+    fn cfu_storage(&mut self, mem_offset: usize, data: &[u8]) -> impl Future<Output = Result<(), CfuWriterError>>;
 }
 
 /// Trait to define R/W behavior for driver that can talk to a CFU component or client
