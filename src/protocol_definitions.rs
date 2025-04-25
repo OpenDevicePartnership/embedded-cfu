@@ -365,10 +365,6 @@ impl UpdateOfferComponentInfoByte1 {
         Self { packed_byte }
     }
 
-    pub fn reserved(&self) -> u8 {
-        (self.packed_byte >> 2) & 0b00111111
-    }
-
     pub fn force_ignore_version(&self) -> bool {
         (self.packed_byte & 0b10000000) != 0
     }
@@ -383,7 +379,7 @@ impl UpdateOfferComponentInfoByte1 {
 /// LSB first Representation of OfferInformationComponentInfo
 pub struct OfferInformationComponentInfo {
     pub code: OfferInformationCodeValues,
-    pub reserved: u8,
+    _reserved: u8,
     pub component_id: SpecialComponentIds,
     pub token: HostToken,
 }
@@ -392,7 +388,7 @@ impl OfferInformationComponentInfo {
     pub fn new(token: HostToken, component_id: SpecialComponentIds, code: OfferInformationCodeValues) -> Self {
         Self {
             code,
-            reserved: 0,
+            _reserved: 0,
             component_id,
             token,
         }
@@ -427,15 +423,15 @@ impl From<&FwUpdateOfferInformation> for [u8; 16] {
         // Serialize the component_info
         bytes[0..4].copy_from_slice(&[
             info.component_info.code.into(),
-            info.component_info.reserved,
+            0, // component_info._reserved is reserved
             info.component_info.component_id as u8,
             info.component_info.token.into(),
         ]);
 
-        // Serialize the reserved fields
-        bytes[4..8].copy_from_slice(&info._reserved0.to_le_bytes());
-        bytes[8..12].copy_from_slice(&info._reserved1.to_le_bytes());
-        bytes[12..16].copy_from_slice(&info._reserved2.to_le_bytes());
+        // Initialize [4..16] with 0
+        bytes[4..8].copy_from_slice(&[0; 4]); // info._reserved0 is reserved
+        bytes[8..12].copy_from_slice(&[0; 4]); // info._reserved1 is reserved
+        bytes[12..16].copy_from_slice(&[0; 4]); // info._reserved2 is reserved
 
         bytes
     }
@@ -453,7 +449,7 @@ impl TryFrom<&[u8; 16]> for FwUpdateOfferInformation {
             _ => return Err(ConversionError::ValueOutOfRange),
         };
 
-        let reserved = bytes[1];
+        let reserved = 0; // bytes[1] is reserved
         let component_id = SpecialComponentIds::try_from(bytes[2]).map_err(|_| ConversionError::ValueOutOfRange)?;
         if component_id != SpecialComponentIds::Info {
             return Err(ConversionError::ValueOutOfRange);
@@ -463,25 +459,13 @@ impl TryFrom<&[u8; 16]> for FwUpdateOfferInformation {
         Ok(FwUpdateOfferInformation {
             component_info: OfferInformationComponentInfo {
                 code,
-                reserved,
+                _reserved: reserved,
                 component_id,
                 token,
             },
-            _reserved0: u32::from_le_bytes(
-                bytes[4..8]
-                    .try_into()
-                    .map_err(|_| ConversionError::ByteConversionError)?,
-            ),
-            _reserved1: u32::from_le_bytes(
-                bytes[8..12]
-                    .try_into()
-                    .map_err(|_| ConversionError::ByteConversionError)?,
-            ),
-            _reserved2: u32::from_le_bytes(
-                bytes[12..16]
-                    .try_into()
-                    .map_err(|_| ConversionError::ByteConversionError)?,
-            ),
+            _reserved0: 0,
+            _reserved1: 0,
+            _reserved2: 0,
         })
     }
 }
@@ -513,7 +497,7 @@ impl From<OfferInformationCodeValues> for u8 {
 /// LSB first Representation of FwUpdateOfferExtended
 pub struct OfferExtendedComponentInfo {
     pub code: OfferCommandExtendedCodeValues,
-    pub reserved: u8,
+    _reserved: u8,
     pub component_id: SpecialComponentIds,
     pub token: HostToken,
 }
@@ -522,7 +506,7 @@ impl OfferExtendedComponentInfo {
     pub fn new(token: HostToken, component_id: SpecialComponentIds, code: OfferCommandExtendedCodeValues) -> Self {
         Self {
             code,
-            reserved: 0,
+            _reserved: 0,
             component_id,
             token,
         }
@@ -587,15 +571,16 @@ impl From<&FwUpdateOfferExtended> for [u8; 16] {
         // Serialize the component_info
         bytes[0..4].copy_from_slice(&[
             command.component_info.code.into(),
-            command.component_info.reserved,
+            0, // component_info._reserved is reserved
             command.component_info.component_id as u8,
             command.component_info.token.into(),
         ]);
 
-        // Serialize the Reserved fields
-        bytes[4..8].copy_from_slice(&command._reserved0.to_le_bytes());
-        bytes[8..12].copy_from_slice(&command._reserved1.to_le_bytes());
-        bytes[12..16].copy_from_slice(&command._reserved2.to_le_bytes());
+        // Initialize [4..16] with 0
+        bytes[4..8].copy_from_slice(&[0; 4]); // command._reserved0 is reserved
+        bytes[8..12].copy_from_slice(&[0; 4]); // command._reserved1 is reserved
+        bytes[12..16].copy_from_slice(&[0; 4]); // command._reserved2 is reserved
+
         bytes
     }
 }
@@ -606,7 +591,7 @@ impl TryFrom<&[u8; 16]> for FwUpdateOfferExtended {
 
     fn try_from(bytes: &[u8; 16]) -> Result<Self, Self::Error> {
         let code = OfferCommandExtendedCodeValues::from(bytes[0]);
-        let reserved = bytes[1];
+        let reserved = 0; // bytes[1] is reserved
         let component_id = SpecialComponentIds::try_from(bytes[2]).map_err(|_| ConversionError::ValueOutOfRange)?;
         if component_id != SpecialComponentIds::Command {
             return Err(ConversionError::ValueOutOfRange);
@@ -616,25 +601,14 @@ impl TryFrom<&[u8; 16]> for FwUpdateOfferExtended {
         Ok(FwUpdateOfferExtended {
             component_info: OfferExtendedComponentInfo {
                 code,
-                reserved,
+                _reserved: reserved,
                 component_id,
                 token,
             },
-            _reserved0: u32::from_le_bytes(
-                bytes[4..8]
-                    .try_into()
-                    .map_err(|_| ConversionError::ByteConversionError)?,
-            ),
-            _reserved1: u32::from_le_bytes(
-                bytes[8..12]
-                    .try_into()
-                    .map_err(|_| ConversionError::ByteConversionError)?,
-            ),
-            _reserved2: u32::from_le_bytes(
-                bytes[12..16]
-                    .try_into()
-                    .map_err(|_| ConversionError::ByteConversionError)?,
-            ),
+
+            _reserved0: 0, // bytes[4..8] is reserved
+            _reserved1: 0, // bytes[8..12] is reserved
+            _reserved2: 0, // bytes[12..16] is reserved
         })
     }
 }
@@ -783,13 +757,15 @@ impl FwUpdateOfferResponse {
 impl From<&FwUpdateOfferResponse> for [u8; 16] {
     fn from(response: &FwUpdateOfferResponse) -> Self {
         let mut buffer = [0u8; 16];
-        buffer[0..3].copy_from_slice(&response._reserved0);
+
+        // Initialize fields 0..3, 4..8, 9..12, 13..16 to 0.
+        buffer[0..3].copy_from_slice(&[0; 3]); // response._reserved0 is reserved
         buffer[3] = response.token.into();
-        buffer[4..8].copy_from_slice(&response._reserved1);
+        buffer[4..8].copy_from_slice(&[0; 4]); // response._reserved1 is reserved
         buffer[8] = response.reject_reason.into();
-        buffer[9..12].copy_from_slice(&response._reserved2);
+        buffer[9..12].copy_from_slice(&[0; 3]); // response._reserved2 is reserved
         buffer[12] = response.status.into();
-        buffer[13..16].copy_from_slice(&response._reserved3);
+        buffer[13..16].copy_from_slice(&[0; 3]); // response._reserved3 is reserved
         buffer
     }
 }
@@ -800,13 +776,13 @@ impl TryFrom<[u8; 16]> for FwUpdateOfferResponse {
 
     fn try_from(buffer: [u8; 16]) -> Result<Self, Self::Error> {
         Ok(Self {
-            _reserved0: [buffer[0], buffer[1], buffer[2]],
             token: HostToken::try_from(buffer[3]).map_err(|_| ConversionError::ByteConversionError)?,
-            _reserved1: [buffer[4], buffer[5], buffer[6], buffer[7]],
             reject_reason: OfferRejectReason::try_from(buffer[8]).map_err(|_| ConversionError::ByteConversionError)?,
-            _reserved2: [buffer[9], buffer[10], buffer[11]],
             status: OfferStatus::try_from(buffer[12]).map_err(|_| ConversionError::ByteConversionError)?,
-            _reserved3: [buffer[13], buffer[14], buffer[15]],
+            _reserved0: [0; 3],
+            _reserved1: [0; 4],
+            _reserved2: [0; 3],
+            _reserved3: [0; 3],
         })
     }
 }
@@ -1004,9 +980,9 @@ impl From<&FwUpdateContentResponse> for [u8; 16] {
     fn from(response: &FwUpdateContentResponse) -> Self {
         let mut buffer = [0u8; 16];
         buffer[0..2].copy_from_slice(&response.sequence.to_le_bytes());
-        buffer[2..4].copy_from_slice(&response._reserved0.to_le_bytes());
+        buffer[2..4].copy_from_slice(&[0; 2]); // response._reserved0 is reserved
         buffer[4] = response.status.into();
-        buffer[5..16].copy_from_slice(&response._reserved1);
+        buffer[5..16].copy_from_slice(&[0; 11]); // response._reserved1 is reserved
         buffer
     }
 }
@@ -1018,13 +994,10 @@ impl TryFrom<[u8; 16]> for FwUpdateContentResponse {
     fn try_from(buffer: [u8; 16]) -> Result<Self, Self::Error> {
         Ok(Self {
             sequence: u16::from_le_bytes([buffer[0], buffer[1]]),
-            _reserved0: u16::from_le_bytes([buffer[2], buffer[3]]),
+            _reserved0: 0, // [buffer[2], buffer[3]] is reserved
             status: CfuUpdateContentResponseStatus::try_from(buffer[4])
                 .map_err(|_| ConversionError::ByteConversionError)?,
-            _reserved1: [
-                buffer[5], buffer[6], buffer[7], buffer[8], buffer[9], buffer[10], buffer[11], buffer[12], buffer[13],
-                buffer[14], buffer[15],
-            ],
+            _reserved1: [0; 11], // buffer[5..16] is reserved
         })
     }
 }
@@ -1082,19 +1055,20 @@ mod tests {
     #[test]
     fn test_fwupdate_offer_extended_serialization_deserialization() {
         // Create an instance of FwUpdateOfferExtended
-        let offer_extended_command_orig = FwUpdateOfferExtended {
-            component_info: OfferExtendedComponentInfo::new(
-                HostToken::Driver,
-                SpecialComponentIds::Command,
-                OfferCommandExtendedCodeValues::OfferNotifyOnReady,
-            ),
-            _reserved0: 0x12345678,
-            _reserved1: 0x87654321,
-            _reserved2: 0x12345678,
-        };
+        let offer_extended_command_orig = FwUpdateOfferExtended::new(OfferExtendedComponentInfo::new(
+            HostToken::Driver,
+            SpecialComponentIds::Command,
+            OfferCommandExtendedCodeValues::OfferNotifyOnReady,
+        ));
 
         // Serialize the extended command to a byte array
         let offer_extended_command_serialized: [u8; 16] = (&offer_extended_command_orig).into();
+
+        // Ensure reserved fields are all zeros
+        assert_eq!(offer_extended_command_serialized[1], 0);
+        assert_eq!(&offer_extended_command_serialized[4..8], &[0; 4]);
+        assert_eq!(&offer_extended_command_serialized[8..12], &[0; 4]);
+        assert_eq!(&offer_extended_command_serialized[12..16], &[0; 4]);
 
         // Deserialize the byte array back to a FwUpdateOfferExtended instance
         let offer_extended_command_deserialized = FwUpdateOfferExtended::try_from(&offer_extended_command_serialized);
@@ -1134,19 +1108,20 @@ mod tests {
     #[test]
     fn test_fwupdate_offer_information_serialization_deserialization() {
         // Create an instance of FwUpdateOfferInformation
-        let offer_info_orig = FwUpdateOfferInformation {
-            component_info: OfferInformationComponentInfo::new(
-                HostToken::VendorSpecific(0xFE), // use VendorSpecific to test the conversion
-                SpecialComponentIds::Info,
-                OfferInformationCodeValues::StartEntireTransaction,
-            ),
-            _reserved0: 0x12345678,
-            _reserved1: 0x87654321,
-            _reserved2: 0x12345678,
-        };
+        let offer_info_orig = FwUpdateOfferInformation::new(OfferInformationComponentInfo::new(
+            HostToken::VendorSpecific(0xFE), // use VendorSpecific to test the conversion
+            SpecialComponentIds::Info,
+            OfferInformationCodeValues::StartEntireTransaction,
+        ));
 
         // Serialize the offer information to a byte array
         let offer_info_serialized: [u8; 16] = (&offer_info_orig).into();
+
+        // Ensure reserved fields are all zeros
+        assert_eq!(offer_info_serialized[1], 0);
+        assert_eq!(&offer_info_serialized[4..8], &[0; 4]);
+        assert_eq!(&offer_info_serialized[8..12], &[0; 4]);
+        assert_eq!(&offer_info_serialized[12..16], &[0; 4]);
 
         // Deserialize the byte array back to a FwUpdateOfferInformation instance
         let offer_info_deserialized = FwUpdateOfferInformation::try_from(&offer_info_serialized);
@@ -1198,6 +1173,12 @@ mod tests {
         // Serialize the offer_response_orig to a byte array
         let offer_response_serialized: [u8; 16] = (&offer_response_orig).into();
 
+        // Ensure reserved fields are all zeros
+        assert_eq!(&offer_response_serialized[0..3], &[0; 3]); // _reserved0 is reserved
+        assert_eq!(&offer_response_serialized[4..8], &[0; 4]); // _reserved1 is reserved
+        assert_eq!(&offer_response_serialized[9..12], &[0; 3]); // _reserved2 is reserved
+        assert_eq!(&offer_response_serialized[13..16], &[0; 3]); // _reserved3 is reserved
+
         // Deserialize the byte array back to a FwUpdateOfferResponse instance
         let offer_response_deserialized = FwUpdateOfferResponse::try_from(offer_response_serialized).unwrap();
 
@@ -1213,6 +1194,10 @@ mod tests {
 
         // Serialize the content_response_orig to a byte array
         let content_response_serialized: [u8; 16] = (&content_response_orig).into();
+
+        // Ensure reserved fields are all zeros
+        assert_eq!(&content_response_serialized[2..4], &[0; 2]); // _reserved0 is reserved
+        assert_eq!(&content_response_serialized[5..16], &[0; 11]); // _reserved1 is reserved
 
         // Deserialize the byte array back to a FwUpdateContentResponse instance
         let content_response_deserialized = FwUpdateContentResponse::try_from(content_response_serialized).unwrap();
