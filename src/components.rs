@@ -1,7 +1,8 @@
 use core::future::Future;
 
 use crate::protocol_definitions::*;
-use crate::{CfuWriter, CfuWriterError};
+use crate::writer::CfuWriterAsync;
+use crate::writer::CfuWriterError;
 
 pub trait CfuComponentInfo {
     /// Gets the current fw version of the component
@@ -26,10 +27,10 @@ pub trait CfuComponentInfo {
     fn get_subcomponents(&self) -> [Option<ComponentId>; MAX_SUBCMPT_COUNT];
 }
 
-pub trait CfuComponentStorage: CfuWriter {
-    fn storage_prepare(&self) -> impl Future<Output = Result<(), CfuWriterError>>;
-    fn storage_write(&self) -> impl Future<Output = Result<(), CfuWriterError>>;
-    fn storage_finalize(&self) -> impl Future<Output = Result<(), CfuWriterError>>;
+pub trait CfuComponentStorage: CfuWriterAsync {
+    fn storage_prepare(&self) -> impl Future<Output = Result<(), CfuWriterError>> + Send;
+    fn storage_write(&self) -> impl Future<Output = Result<(), CfuWriterError>> + Send;
+    fn storage_finalize(&self) -> impl Future<Output = Result<(), CfuWriterError>> + Send;
     fn get_storage_offset(&self) -> usize {
         0
     }
