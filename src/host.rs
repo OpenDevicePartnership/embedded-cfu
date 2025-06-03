@@ -7,17 +7,17 @@ use crate::writer::{CfuWriterAsync, CfuWriterError};
 pub trait CfuHostStates<W> {
     /// Notifies that the host is now initialized and has identified the offers to send
     fn start_transaction(self, writer: &mut W)
-        -> impl Future<Output = Result<FwUpdateOfferResponse, CfuProtocolError>> + Send;
+        -> impl Future<Output = Result<FwUpdateOfferResponse, CfuProtocolError>>;
     /// Notifies the primary component that the host is ready to start sending offers
     fn notify_start_offer_list(
         self,
         writer: &mut W,
-    ) -> impl Future<Output = Result<FwUpdateOfferResponse, CfuProtocolError>> + Send;
+    ) -> impl Future<Output = Result<FwUpdateOfferResponse, CfuProtocolError>>;
     /// Notifies the primary component that the host has sent all offers
     fn notify_end_offer_list(
         self,
         writer: &mut W,
-    ) -> impl Future<Output = Result<FwUpdateOfferResponse, CfuProtocolError>> + Send;
+    ) -> impl Future<Output = Result<FwUpdateOfferResponse, CfuProtocolError>>;
     /// For a slice of responses, determine if any components have not finished updating
     fn verify_all_updates_completed(
         offer_responses: &[FwUpdateOfferResponse],

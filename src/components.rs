@@ -28,9 +28,9 @@ pub trait CfuComponentInfo {
 }
 
 pub trait CfuComponentStorage: CfuWriterAsync {
-    fn storage_prepare(&self) -> impl Future<Output = Result<(), CfuWriterError>> + Send;
-    fn storage_write(&self) -> impl Future<Output = Result<(), CfuWriterError>> + Send;
-    fn storage_finalize(&self) -> impl Future<Output = Result<(), CfuWriterError>> + Send;
+    fn storage_prepare(&self) -> impl Future<Output = Result<(), CfuWriterError>>;
+    fn storage_write(&self) -> impl Future<Output = Result<(), CfuWriterError>>;
+    fn storage_finalize(&self) -> impl Future<Output = Result<(), CfuWriterError>>;
     fn get_storage_offset(&self) -> usize {
         0
     }
