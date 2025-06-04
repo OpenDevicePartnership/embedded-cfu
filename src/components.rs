@@ -27,7 +27,7 @@ pub trait CfuComponentInfo {
     fn get_subcomponents(&self) -> [Option<ComponentId>; MAX_SUBCMPT_COUNT];
 }
 
-pub trait CfuComponentStorage: CfuWriterAsync {
+pub trait CfuComponentStorage {
     fn storage_prepare(&self) -> impl Future<Output = Result<(), CfuWriterError>>;
     fn storage_write(&self) -> impl Future<Output = Result<(), CfuWriterError>>;
     fn storage_finalize(&self) -> impl Future<Output = Result<(), CfuWriterError>>;
