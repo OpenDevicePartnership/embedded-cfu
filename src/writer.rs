@@ -71,7 +71,7 @@ impl CfuWriterAsync for CfuWriterNoop {
 }
 
 impl CfuWriterSync for CfuWriterNoop {
-    fn cfu_write_read(&self, _mem_offset: Option<usize>, _data: &[u8], read: &mut [u8]) -> Result<(), CfuWriterError> {
+    fn cfu_write_read(&self, _mem_offset: Option<usize>, _data: &[u8], _read: &mut [u8]) -> Result<(), CfuWriterError> {
         Ok(())
     }
 
