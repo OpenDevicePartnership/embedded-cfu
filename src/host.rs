@@ -1,5 +1,4 @@
 use super::*;
-
 use crate::writer::{CfuWriterAsync, CfuWriterError};
 
 /// CfuHostStates trait defines behavior needed for a Cfu Host to process available Cfu Offers

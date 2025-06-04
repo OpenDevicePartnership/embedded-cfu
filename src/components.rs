@@ -1,8 +1,7 @@
 use core::future::Future;
 
 use crate::protocol_definitions::*;
-use crate::writer::CfuWriterAsync;
-use crate::writer::CfuWriterError;
+use crate::writer::{CfuWriterAsync, CfuWriterError};
 
 pub trait CfuComponentInfo {
     /// Gets the current fw version of the component
