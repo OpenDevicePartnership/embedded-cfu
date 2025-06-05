@@ -62,9 +62,9 @@ pub trait CfuWriterSync {
     fn cfu_storage(&mut self, mem_offset: usize, data: &[u8]) -> Result<(), CfuWriterError>;
 }
 
-pub struct CfuWriterNoop;
+pub struct CfuWriterNop;
 
-impl CfuWriterAsync for CfuWriterNoop {
+impl CfuWriterAsync for CfuWriterNop {
     async fn cfu_write_read(
         &self,
         _mem_offset: Option<usize>,
@@ -99,7 +99,7 @@ impl CfuWriterAsync for CfuWriterNoop {
     }
 }
 
-impl CfuWriterSync for CfuWriterNoop {
+impl CfuWriterSync for CfuWriterNop {
     fn cfu_write_read(
         &self,
         _mem_offset: Option<usize>,
