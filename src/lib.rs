@@ -3,7 +3,6 @@ use core::future::Future;
 
 use embedded_io_async::{Read, ReadExactError, Seek, SeekFrom};
 
-use crate::components::*;
 use crate::protocol_definitions::*;
 
 pub mod client;

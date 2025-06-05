@@ -1,5 +1,15 @@
-use super::*;
-use crate::writer::{CfuWriterAsync, CfuWriterError};
+use core::future::Future;
+
+use crate::{
+    protocol_definitions::{
+        CfuProtocolError, CfuUpdateContentResponseStatus, ComponentId, FwUpdateContentCommand,
+        FwUpdateContentHeader, FwUpdateContentResponse, FwUpdateOfferResponse, DEFAULT_DATA_LENGTH,
+        FW_UPDATE_FLAG_FIRST_BLOCK, FW_UPDATE_FLAG_LAST_BLOCK,
+    },
+    trace,
+    writer::{CfuWriterAsync, CfuWriterError},
+    CfuImage, DataChunk,
+};
 
 /// CfuHostStates trait defines behavior needed for a Cfu Host to process available Cfu Offers
 /// and send the appropriate commands to the Cfu Client to update the components

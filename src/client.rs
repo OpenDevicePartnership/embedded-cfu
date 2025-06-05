@@ -1,4 +1,6 @@
-use super::*;
+use core::future::Future;
+
+use crate::components::CfuComponentTraits;
 
 /// CfuReceiveContent trait defines behavior needed for a Cfu client (receiver) to process CFU commands
 /// E is an error type that can be defined by the implementor
