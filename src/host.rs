@@ -5,8 +5,10 @@ use crate::writer::{CfuWriterAsync, CfuWriterError};
 /// and send the appropriate commands to the Cfu Client to update the components
 pub trait CfuHostStates<W> {
     /// Notifies that the host is now initialized and has identified the offers to send
-    fn start_transaction(self, writer: &mut W)
-        -> impl Future<Output = Result<FwUpdateOfferResponse, CfuProtocolError>>;
+    fn start_transaction(
+        self,
+        writer: &mut W,
+    ) -> impl Future<Output = Result<FwUpdateOfferResponse, CfuProtocolError>>;
     /// Notifies the primary component that the host is ready to start sending offers
     fn notify_start_offer_list(
         self,
@@ -92,7 +94,8 @@ impl<W: CfuWriterAsync> CfuUpdateContent<W> for CfuUpdater {
         let remainder = total_bytes % chunk_size;
 
         // Read and process data in chunks so as to not over-burden memory resources
-        let mut resp = FwUpdateContentResponse::new(0, CfuUpdateContentResponseStatus::ErrorInvalid);
+        let mut resp =
+            FwUpdateContentResponse::new(0, CfuUpdateContentResponseStatus::ErrorInvalid);
         for i in 0..num_chunks {
             let mut chunk = [0u8; DEFAULT_DATA_LENGTH];
             let address_offset = i * DEFAULT_DATA_LENGTH + base_offset;

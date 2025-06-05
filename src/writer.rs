@@ -21,19 +21,36 @@ pub trait CfuWriterAsync {
     ) -> impl Future<Output = Result<(), CfuWriterError>>;
 
     /// Fills a given buffer with data from the component
-    fn cfu_read(&self, mem_offset: Option<usize>, read: &mut [u8]) -> impl Future<Output = Result<(), CfuWriterError>>;
+    fn cfu_read(
+        &self,
+        mem_offset: Option<usize>,
+        read: &mut [u8],
+    ) -> impl Future<Output = Result<(), CfuWriterError>>;
 
     /// Writes a given buffer of data to a component
-    fn cfu_write(&self, mem_offset: Option<usize>, data: &[u8]) -> impl Future<Output = Result<(), CfuWriterError>>;
+    fn cfu_write(
+        &self,
+        mem_offset: Option<usize>,
+        data: &[u8],
+    ) -> impl Future<Output = Result<(), CfuWriterError>>;
 
     /// Manages erasing sectors and writing pages into flash based on the CFU offset
-    fn cfu_storage(&mut self, mem_offset: usize, data: &[u8]) -> impl Future<Output = Result<(), CfuWriterError>>;
+    fn cfu_storage(
+        &mut self,
+        mem_offset: usize,
+        data: &[u8],
+    ) -> impl Future<Output = Result<(), CfuWriterError>>;
 }
 
 /// Trait to define R/W behavior for driver that can talk to a CFU component or client
 pub trait CfuWriterSync {
     /// writes a chunk of data to a component and reads back to another buffer
-    fn cfu_write_read(&self, mem_offset: Option<usize>, data: &[u8], read: &mut [u8]) -> Result<(), CfuWriterError>;
+    fn cfu_write_read(
+        &self,
+        mem_offset: Option<usize>,
+        data: &[u8],
+        read: &mut [u8],
+    ) -> Result<(), CfuWriterError>;
 
     /// Fills a given buffer with data from the component
     fn cfu_read(&self, mem_offset: Option<usize>, read: &mut [u8]) -> Result<(), CfuWriterError>;
@@ -57,21 +74,38 @@ impl CfuWriterAsync for CfuWriterNoop {
         Ok(())
     }
 
-    async fn cfu_read(&self, _mem_offset: Option<usize>, _read: &mut [u8]) -> Result<(), CfuWriterError> {
+    async fn cfu_read(
+        &self,
+        _mem_offset: Option<usize>,
+        _read: &mut [u8],
+    ) -> Result<(), CfuWriterError> {
         Ok(())
     }
 
-    async fn cfu_write(&self, _mem_offset: Option<usize>, _data: &[u8]) -> Result<(), CfuWriterError> {
+    async fn cfu_write(
+        &self,
+        _mem_offset: Option<usize>,
+        _data: &[u8],
+    ) -> Result<(), CfuWriterError> {
         Ok(())
     }
 
-    async fn cfu_storage(&mut self, _mem_offset: usize, _data: &[u8]) -> Result<(), CfuWriterError> {
+    async fn cfu_storage(
+        &mut self,
+        _mem_offset: usize,
+        _data: &[u8],
+    ) -> Result<(), CfuWriterError> {
         Ok(())
     }
 }
 
 impl CfuWriterSync for CfuWriterNoop {
-    fn cfu_write_read(&self, _mem_offset: Option<usize>, _data: &[u8], _read: &mut [u8]) -> Result<(), CfuWriterError> {
+    fn cfu_write_read(
+        &self,
+        _mem_offset: Option<usize>,
+        _data: &[u8],
+        _read: &mut [u8],
+    ) -> Result<(), CfuWriterError> {
         Ok(())
     }
 
