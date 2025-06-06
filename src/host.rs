@@ -32,7 +32,7 @@ pub trait CfuHostStates<W> {
     /// For a slice of responses, determine if any components have not finished updating
     fn verify_all_updates_completed(
         offer_responses: &[FwUpdateOfferResponse],
-    ) -> impl Future<Output = Result<bool, CfuProtocolError>> + Send;
+    ) -> impl Future<Output = Result<bool, CfuProtocolError>>;
 }
 
 /// CfuUpdateContent trait defines behavior needed for a Cfu Host to send the contents of an accepted offer to a component via sending commands to a Cfu Client
