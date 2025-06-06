@@ -1,7 +1,11 @@
 use core::future::Future;
 
-use crate::protocol_definitions::*;
-use crate::{CfuWriter, CfuWriterError};
+use crate::{
+    protocol_definitions::{
+        CfuProtocolError, ComponentId, FwVersion, OfferRejectReason, OfferStatus, MAX_SUBCMPT_COUNT,
+    },
+    writer::CfuWriterError,
+};
 
 pub trait CfuComponentInfo {
     /// Gets the current fw version of the component
@@ -11,7 +15,9 @@ pub trait CfuComponentInfo {
     fn get_component_id(&self) -> ComponentId;
     /// Validate the CFU offer for the component
     /// returns an OfferStatus with additional info on Reject Reason in the Err case.
-    fn is_offer_valid(&self) -> impl Future<Output = Result<OfferStatus, (OfferStatus, OfferRejectReason)>>;
+    fn is_offer_valid(
+        &self,
+    ) -> impl Future<Output = Result<OfferStatus, (OfferStatus, OfferRejectReason)>>;
     /// Returns whether or not this component is a primary component
     /// Not async as this should be an element of struct that implements this trait
     /// Default implementation returns false,
@@ -26,7 +32,7 @@ pub trait CfuComponentInfo {
     fn get_subcomponents(&self) -> [Option<ComponentId>; MAX_SUBCMPT_COUNT];
 }
 
-pub trait CfuComponentStorage: CfuWriter {
+pub trait CfuComponentStorage {
     fn storage_prepare(&self) -> impl Future<Output = Result<(), CfuWriterError>>;
     fn storage_write(&self) -> impl Future<Output = Result<(), CfuWriterError>>;
     fn storage_finalize(&self) -> impl Future<Output = Result<(), CfuWriterError>>;
@@ -50,7 +56,10 @@ pub trait CfuAccessoryComponent {
 pub trait CfuComponentFinalize {
     /// Handles any post-update requirements like delay before reset, or setting boot flags
     /// Default implementation is do nothing
-    fn on_update_complete<T, RT: Default, E: Default>(&self, args: Option<T>) -> impl Future<Output = Result<RT, E>> {
+    fn on_update_complete<T, RT: Default, E: Default>(
+        &self,
+        args: Option<T>,
+    ) -> impl Future<Output = Result<RT, E>> {
         async move {
             if args.is_some() {
                 use crate::trace;

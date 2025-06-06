@@ -1,6 +1,6 @@
 use core::convert::TryFrom;
 
-use crate::CfuWriterError;
+use crate::writer::CfuWriterError;
 
 // Max is 7 components in CfuUpdateOfferResponse, 1 primary and 6 subcomponents
 pub const MAX_CMPT_COUNT: usize = 7;
@@ -130,9 +130,9 @@ impl From<BankType> for u8 {
 /// LSB first Representation of FwVerComponentInfo
 pub struct FwVerComponentInfo {
     pub fw_version: FwVersion,     // u32
-    pub packed_byte: u8,           // u8, bits 0-1 for bank, bits 2-3 for reserved, bits 4-7 for vendor_specific0
+    pub packed_byte: u8, // u8, bits 0-1 for bank, bits 2-3 for reserved, bits 4-7 for vendor_specific0
     pub component_id: ComponentId, // u8
-    pub vendor_specific1: u16,     // u16
+    pub vendor_specific1: u16, // u16
 }
 
 impl FwVerComponentInfo {
@@ -184,9 +184,11 @@ impl From<&GetFwVersionResponse> for [u8; 60] {
             let component = &response.component_info[i];
             bytes[offset] = component.packed_byte;
             bytes[offset + 1] = component.component_id;
-            bytes[offset + 2..offset + 4].copy_from_slice(&component.vendor_specific1.to_le_bytes());
+            bytes[offset + 2..offset + 4]
+                .copy_from_slice(&component.vendor_specific1.to_le_bytes());
             bytes[offset + 4] = component.fw_version.major;
-            bytes[offset + 5..offset + 7].copy_from_slice(&component.fw_version.minor.to_le_bytes());
+            bytes[offset + 5..offset + 7]
+                .copy_from_slice(&component.fw_version.minor.to_le_bytes());
             bytes[offset + 7] = component.fw_version.variant;
             offset += 8;
         }
@@ -218,9 +220,11 @@ impl TryFrom<&[u8; 60]> for GetFwVersionResponse {
         for component in component_info.iter_mut().take(component_count as usize) {
             component.packed_byte = bytes[offset];
             component.component_id = bytes[offset + 1];
-            component.vendor_specific1 = u16::from_le_bytes(bytes[offset + 2..offset + 4].try_into().unwrap());
+            component.vendor_specific1 =
+                u16::from_le_bytes(bytes[offset + 2..offset + 4].try_into().unwrap());
             component.fw_version.major = bytes[offset + 4];
-            component.fw_version.minor = u16::from_le_bytes(bytes[offset + 5..offset + 7].try_into().unwrap());
+            component.fw_version.minor =
+                u16::from_le_bytes(bytes[offset + 5..offset + 7].try_into().unwrap());
             component.fw_version.variant = bytes[offset + 7];
             offset += 8;
         }
@@ -302,9 +306,12 @@ impl TryFrom<&[u8; 32]> for FwUpdateOffer {
     fn try_from(bytes: &[u8; 32]) -> Result<Self, Self::Error> {
         let component_info = UpdateOfferComponentInfo {
             segment_number: bytes[0],
-            byte1: UpdateOfferComponentInfoByte1 { packed_byte: bytes[1] },
+            byte1: UpdateOfferComponentInfoByte1 {
+                packed_byte: bytes[1],
+            },
             component_id: bytes[2],
-            token: HostToken::try_from(bytes[3]).map_err(|_| ConversionError::ByteConversionError)?,
+            token: HostToken::try_from(bytes[3])
+                .map_err(|_| ConversionError::ByteConversionError)?,
         };
 
         let firmware_version = FwVersion {
@@ -385,7 +392,11 @@ pub struct OfferInformationComponentInfo {
 }
 
 impl OfferInformationComponentInfo {
-    pub fn new(token: HostToken, component_id: SpecialComponentIds, code: OfferInformationCodeValues) -> Self {
+    pub fn new(
+        token: HostToken,
+        component_id: SpecialComponentIds,
+        code: OfferInformationCodeValues,
+    ) -> Self {
         Self {
             code,
             _reserved: 0,
@@ -450,7 +461,8 @@ impl TryFrom<&[u8; 16]> for FwUpdateOfferInformation {
         };
 
         let reserved = 0; // bytes[1] is reserved
-        let component_id = SpecialComponentIds::try_from(bytes[2]).map_err(|_| ConversionError::ValueOutOfRange)?;
+        let component_id = SpecialComponentIds::try_from(bytes[2])
+            .map_err(|_| ConversionError::ValueOutOfRange)?;
         if component_id != SpecialComponentIds::Info {
             return Err(ConversionError::ValueOutOfRange);
         }
@@ -503,7 +515,11 @@ pub struct OfferExtendedComponentInfo {
 }
 
 impl OfferExtendedComponentInfo {
-    pub fn new(token: HostToken, component_id: SpecialComponentIds, code: OfferCommandExtendedCodeValues) -> Self {
+    pub fn new(
+        token: HostToken,
+        component_id: SpecialComponentIds,
+        code: OfferCommandExtendedCodeValues,
+    ) -> Self {
         Self {
             code,
             _reserved: 0,
@@ -592,7 +608,8 @@ impl TryFrom<&[u8; 16]> for FwUpdateOfferExtended {
     fn try_from(bytes: &[u8; 16]) -> Result<Self, Self::Error> {
         let code = OfferCommandExtendedCodeValues::from(bytes[0]);
         let reserved = 0; // bytes[1] is reserved
-        let component_id = SpecialComponentIds::try_from(bytes[2]).map_err(|_| ConversionError::ValueOutOfRange)?;
+        let component_id = SpecialComponentIds::try_from(bytes[2])
+            .map_err(|_| ConversionError::ValueOutOfRange)?;
         if component_id != SpecialComponentIds::Command {
             return Err(ConversionError::ValueOutOfRange);
         }
@@ -740,7 +757,11 @@ impl FwUpdateOfferResponse {
         }
     }
 
-    pub fn new_with_failure(token: HostToken, reject_reason: OfferRejectReason, status: OfferStatus) -> Self {
+    pub fn new_with_failure(
+        token: HostToken,
+        reject_reason: OfferRejectReason,
+        status: OfferStatus,
+    ) -> Self {
         Self {
             token,
             reject_reason,
@@ -776,9 +797,12 @@ impl TryFrom<[u8; 16]> for FwUpdateOfferResponse {
 
     fn try_from(buffer: [u8; 16]) -> Result<Self, Self::Error> {
         Ok(Self {
-            token: HostToken::try_from(buffer[3]).map_err(|_| ConversionError::ByteConversionError)?,
-            reject_reason: OfferRejectReason::try_from(buffer[8]).map_err(|_| ConversionError::ByteConversionError)?,
-            status: OfferStatus::try_from(buffer[12]).map_err(|_| ConversionError::ByteConversionError)?,
+            token: HostToken::try_from(buffer[3])
+                .map_err(|_| ConversionError::ByteConversionError)?,
+            reject_reason: OfferRejectReason::try_from(buffer[8])
+                .map_err(|_| ConversionError::ByteConversionError)?,
+            status: OfferStatus::try_from(buffer[12])
+                .map_err(|_| ConversionError::ByteConversionError)?,
             _reserved0: [0; 3],
             _reserved1: [0; 4],
             _reserved2: [0; 3],
@@ -1055,11 +1079,12 @@ mod tests {
     #[test]
     fn test_fwupdate_offer_extended_serialization_deserialization() {
         // Create an instance of FwUpdateOfferExtended
-        let offer_extended_command_orig = FwUpdateOfferExtended::new(OfferExtendedComponentInfo::new(
-            HostToken::Driver,
-            SpecialComponentIds::Command,
-            OfferCommandExtendedCodeValues::OfferNotifyOnReady,
-        ));
+        let offer_extended_command_orig =
+            FwUpdateOfferExtended::new(OfferExtendedComponentInfo::new(
+                HostToken::Driver,
+                SpecialComponentIds::Command,
+                OfferCommandExtendedCodeValues::OfferNotifyOnReady,
+            ));
 
         // Serialize the extended command to a byte array
         let offer_extended_command_serialized: [u8; 16] = (&offer_extended_command_orig).into();
@@ -1071,7 +1096,8 @@ mod tests {
         assert_eq!(&offer_extended_command_serialized[12..16], &[0; 4]);
 
         // Deserialize the byte array back to a FwUpdateOfferExtended instance
-        let offer_extended_command_deserialized = FwUpdateOfferExtended::try_from(&offer_extended_command_serialized);
+        let offer_extended_command_deserialized =
+            FwUpdateOfferExtended::try_from(&offer_extended_command_serialized);
 
         // Compare both
         assert_eq!(
@@ -1098,7 +1124,8 @@ mod tests {
         let content_command_serialized: [u8; 60] = (&content_command_orig).into();
 
         // Deserialize the byte array back to a FwUpdateContentCommand instance
-        let content_command_deserialized = FwUpdateContentCommand::try_from(&content_command_serialized);
+        let content_command_deserialized =
+            FwUpdateContentCommand::try_from(&content_command_serialized);
 
         // Compare both
         assert_eq!(content_command_orig, content_command_deserialized.unwrap());
@@ -1158,10 +1185,14 @@ mod tests {
         let fwversion_response_serialized: [u8; 60] = (&fwversion_response_orig).into();
 
         // Deserialize the byte array back to a GetFwVersionResponse instance
-        let fwversion_response_deserialized = GetFwVersionResponse::try_from(&fwversion_response_serialized);
+        let fwversion_response_deserialized =
+            GetFwVersionResponse::try_from(&fwversion_response_serialized);
 
         //compare both
-        assert_eq!(fwversion_response_orig, fwversion_response_deserialized.unwrap());
+        assert_eq!(
+            fwversion_response_orig,
+            fwversion_response_deserialized.unwrap()
+        );
     }
 
     // Serialization and Deserialization tests for FwUpdateOfferResponse
@@ -1180,7 +1211,8 @@ mod tests {
         assert_eq!(&offer_response_serialized[13..16], &[0; 3]); // _reserved3 is reserved
 
         // Deserialize the byte array back to a FwUpdateOfferResponse instance
-        let offer_response_deserialized = FwUpdateOfferResponse::try_from(offer_response_serialized).unwrap();
+        let offer_response_deserialized =
+            FwUpdateOfferResponse::try_from(offer_response_serialized).unwrap();
 
         // Compare both
         assert_eq!(offer_response_orig, offer_response_deserialized);
@@ -1190,7 +1222,8 @@ mod tests {
     #[test]
     fn test_fwupdate_content_response_serialization_deserialization() {
         // Create an instance of FwUpdateContentResponse
-        let content_response_orig = FwUpdateContentResponse::new(0x1234, CfuUpdateContentResponseStatus::Success);
+        let content_response_orig =
+            FwUpdateContentResponse::new(0x1234, CfuUpdateContentResponseStatus::Success);
 
         // Serialize the content_response_orig to a byte array
         let content_response_serialized: [u8; 16] = (&content_response_orig).into();
@@ -1200,7 +1233,8 @@ mod tests {
         assert_eq!(&content_response_serialized[5..16], &[0; 11]); // _reserved1 is reserved
 
         // Deserialize the byte array back to a FwUpdateContentResponse instance
-        let content_response_deserialized = FwUpdateContentResponse::try_from(content_response_serialized).unwrap();
+        let content_response_deserialized =
+            FwUpdateContentResponse::try_from(content_response_serialized).unwrap();
 
         // Compare both
         assert_eq!(content_response_orig, content_response_deserialized);
