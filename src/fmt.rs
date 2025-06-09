@@ -1,9 +1,10 @@
-//! Logging macro implementations and other formating functions
+//! Logging macro implementations and other formatting functions
 
 #[cfg(all(feature = "log", feature = "defmt", not(doc)))]
 compile_error!("features `log` and `defmt` are mutually exclusive");
 
-#[cfg(all(not(doc), feature = "defmt"))]
+#[cfg(all(feature = "defmt", not(doc)))]
+#[doc(hidden)]
 mod defmt {
     /// Logs a trace message using the underlying logger
     #[macro_export]
@@ -61,7 +62,8 @@ mod defmt {
     }
 }
 
-#[cfg(all(not(doc), feature = "log"))]
+#[cfg(all(feature = "log", not(doc)))]
+#[doc(hidden)]
 mod log {
     /// Logs a trace message using the underlying logger
     #[macro_export]
@@ -120,7 +122,7 @@ mod log {
 }
 
 // Provide this implementation for `cargo doc`
-#[cfg(any(doc, not(any(feature = "defmt", feature = "log"))))]
+#[cfg(any(not(any(feature = "defmt", feature = "log")), doc))]
 mod none {
     /// Logs a trace message using the underlying logger
     #[macro_export]
