@@ -517,7 +517,7 @@ impl OfferExtendedComponentInfo {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// LSB first Representation of FwUpdateOfferExtended
 pub struct FwUpdateOfferExtended {
-    component_info: OfferExtendedComponentInfo,
+    pub component_info: OfferExtendedComponentInfo,
     _reserved0: u32,
     _reserved1: u32,
     _reserved2: u32,
