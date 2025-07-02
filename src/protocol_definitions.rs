@@ -1,6 +1,6 @@
 use core::convert::TryFrom;
 
-use crate::CfuWriterError;
+use crate::writer::CfuWriterError;
 
 // Max is 7 components in CfuUpdateOfferResponse, 1 primary and 6 subcomponents
 pub const MAX_CMPT_COUNT: usize = 7;
