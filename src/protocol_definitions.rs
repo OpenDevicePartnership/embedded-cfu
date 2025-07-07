@@ -396,6 +396,7 @@ impl OfferInformationComponentInfo {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// LSB first Representation of FwUpdateOfferInformation
 pub struct FwUpdateOfferInformation {
     pub component_info: OfferInformationComponentInfo,
