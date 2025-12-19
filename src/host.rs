@@ -6,7 +6,7 @@ use crate::protocol_definitions::{
     FW_UPDATE_FLAG_LAST_BLOCK,
 };
 use crate::writer::{CfuWriterAsync, CfuWriterError};
-use crate::{trace, CfuImage, DataChunk};
+use crate::{error, trace, CfuImage, DataChunk};
 
 /// CfuHostStates trait defines behavior needed for a Cfu Host to process available Cfu Offers
 /// and send the appropriate commands to the Cfu Client to update the components
@@ -77,6 +77,15 @@ impl<W: CfuWriterAsync> CfuUpdateContent<W> for CfuUpdater {
         cmpt_id: ComponentId,
         base_offset: usize,
     ) -> Result<FwUpdateContentResponse, CfuProtocolError> {
+        let total_bytes: usize = image.get_total_size();
+
+        if total_bytes <= DEFAULT_DATA_LENGTH {
+            error!(
+                "image size less than or equal to chunk size, we need at least for 2 chunks for first and last block"
+            );
+            return Err(CfuProtocolError::WriterError(CfuWriterError::Other));
+        }
+
         // Build update offer command
         let updateoffercmd_bytes = [0u8; 16];
         let mut offer_resp = [0u8; 16];
@@ -93,7 +102,6 @@ impl<W: CfuWriterAsync> CfuUpdateContent<W> for CfuUpdater {
             return Err(CfuProtocolError::CfuContentUpdateResponseError(status));
         }
 
-        let total_bytes: usize = image.get_total_size();
         let chunk_size = DEFAULT_DATA_LENGTH;
         let num_chunks = total_bytes / chunk_size;
         let remainder = total_bytes % chunk_size;
