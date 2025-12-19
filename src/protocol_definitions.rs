@@ -169,8 +169,10 @@ impl Default for FwVerComponentInfo {
 }
 
 // Convert to bytes
-impl From<&GetFwVersionResponse> for [u8; 60] {
-    fn from(response: &GetFwVersionResponse) -> Self {
+impl TryFrom<&GetFwVersionResponse> for [u8; 60] {
+    type Error = ConversionError;
+
+    fn try_from(response: &GetFwVersionResponse) -> Result<Self, Self::Error> {
         let mut bytes = [0u8; 60];
 
         // Serialize header
@@ -181,17 +183,26 @@ impl From<&GetFwVersionResponse> for [u8; 60] {
         // Serialize component_info
         let mut offset = 4;
         for i in 0..response.header.component_count as usize {
-            let component = &response.component_info[i];
-            bytes[offset] = component.packed_byte;
-            bytes[offset + 1] = component.component_id;
-            bytes[offset + 2..offset + 4].copy_from_slice(&component.vendor_specific1.to_le_bytes());
-            bytes[offset + 4] = component.fw_version.major;
-            bytes[offset + 5..offset + 7].copy_from_slice(&component.fw_version.minor.to_le_bytes());
-            bytes[offset + 7] = component.fw_version.variant;
+            let component = &response
+                .component_info
+                .get(i)
+                .ok_or(ConversionError::ByteConversionError)?;
+            *bytes.get_mut(offset).ok_or(ConversionError::ByteConversionError)? = component.packed_byte;
+            *bytes.get_mut(offset + 1).ok_or(ConversionError::ByteConversionError)? = component.component_id;
+            bytes
+                .get_mut(offset + 2..offset + 4)
+                .ok_or(ConversionError::ByteConversionError)?
+                .copy_from_slice(&component.vendor_specific1.to_le_bytes());
+            *bytes.get_mut(offset + 4).ok_or(ConversionError::ByteConversionError)? = component.fw_version.major;
+            bytes
+                .get_mut(offset + 5..offset + 7)
+                .ok_or(ConversionError::ByteConversionError)?
+                .copy_from_slice(&component.fw_version.minor.to_le_bytes());
+            *bytes.get_mut(offset + 7).ok_or(ConversionError::ByteConversionError)? = component.fw_version.variant;
             offset += 8;
         }
 
-        bytes
+        Ok(bytes)
     }
 }
 
@@ -199,14 +210,21 @@ impl From<&GetFwVersionResponse> for [u8; 60] {
 impl TryFrom<&[u8; 60]> for GetFwVersionResponse {
     type Error = ConversionError;
 
+    #[allow(clippy::indexing_slicing)] // static_check and fixed size array guarantees indexing is safe
     fn try_from(bytes: &[u8; 60]) -> Result<Self, Self::Error> {
+        const _: () = assert!(MAX_CMPT_COUNT * 8 + 4 <= 60, "Component count exceeds maximum allowed");
+
         let component_count = bytes[0];
 
         if component_count as usize > MAX_CMPT_COUNT {
             return Err(ConversionError::ValueOutOfRange);
         }
 
-        let _reserved = u16::from_le_bytes(bytes[1..3].try_into().unwrap());
+        let _reserved = u16::from_le_bytes(
+            bytes[1..3]
+                .try_into()
+                .map_err(|_| ConversionError::ByteConversionError)?,
+        );
         let byte3 = match bytes[3] {
             0x20 => GetFwVerRespHeaderByte3::NoSpecialFlags,
             0x21 => GetFwVerRespHeaderByte3::ExtensionFlagSet,
@@ -218,9 +236,17 @@ impl TryFrom<&[u8; 60]> for GetFwVersionResponse {
         for component in component_info.iter_mut().take(component_count as usize) {
             component.packed_byte = bytes[offset];
             component.component_id = bytes[offset + 1];
-            component.vendor_specific1 = u16::from_le_bytes(bytes[offset + 2..offset + 4].try_into().unwrap());
+            component.vendor_specific1 = u16::from_le_bytes(
+                bytes[offset + 2..offset + 4]
+                    .try_into()
+                    .map_err(|_| ConversionError::ByteConversionError)?,
+            );
             component.fw_version.major = bytes[offset + 4];
-            component.fw_version.minor = u16::from_le_bytes(bytes[offset + 5..offset + 7].try_into().unwrap());
+            component.fw_version.minor = u16::from_le_bytes(
+                bytes[offset + 5..offset + 7]
+                    .try_into()
+                    .map_err(|_| ConversionError::ByteConversionError)?,
+            );
             component.fw_version.variant = bytes[offset + 7];
             offset += 8;
         }
@@ -309,12 +335,24 @@ impl TryFrom<&[u8; 32]> for FwUpdateOffer {
 
         let firmware_version = FwVersion {
             major: bytes[7],
-            minor: u16::from_le_bytes(bytes[5..7].try_into().unwrap()),
+            minor: u16::from_le_bytes(
+                bytes[5..7]
+                    .try_into()
+                    .map_err(|_| ConversionError::ByteConversionError)?,
+            ),
             variant: bytes[4],
         };
 
-        let vendor_specific = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
-        let misc_and_protocol_version = u32::from_le_bytes(bytes[12..16].try_into().unwrap());
+        let vendor_specific = u32::from_le_bytes(
+            bytes[8..12]
+                .try_into()
+                .map_err(|_| ConversionError::ByteConversionError)?,
+        );
+        let misc_and_protocol_version = u32::from_le_bytes(
+            bytes[12..16]
+                .try_into()
+                .map_err(|_| ConversionError::ByteConversionError)?,
+        );
 
         Ok(FwUpdateOffer {
             component_info,
@@ -659,8 +697,16 @@ impl TryFrom<&[u8; 60]> for FwUpdateContentCommand {
     fn try_from(bytes: &[u8; 60]) -> Result<Self, Self::Error> {
         let flags = bytes[0];
         let data_length = bytes[1];
-        let sequence_num = u16::from_le_bytes(bytes[2..4].try_into().unwrap());
-        let firmware_address = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+        let sequence_num = u16::from_le_bytes(
+            bytes[2..4]
+                .try_into()
+                .map_err(|_| ConversionError::ByteConversionError)?,
+        );
+        let firmware_address = u32::from_le_bytes(
+            bytes[4..8]
+                .try_into()
+                .map_err(|_| ConversionError::ByteConversionError)?,
+        );
 
         let mut data = [0u8; DEFAULT_DATA_LENGTH];
         data.copy_from_slice(&bytes[8..]);
@@ -1156,7 +1202,7 @@ mod tests {
         };
 
         // Serialize the fwversion_response_orig to a byte array
-        let fwversion_response_serialized: [u8; 60] = (&fwversion_response_orig).into();
+        let fwversion_response_serialized: [u8; 60] = (&fwversion_response_orig).try_into().unwrap();
 
         // Deserialize the byte array back to a GetFwVersionResponse instance
         let fwversion_response_deserialized = GetFwVersionResponse::try_from(&fwversion_response_serialized);

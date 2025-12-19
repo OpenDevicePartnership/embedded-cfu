@@ -99,7 +99,8 @@ impl<W: CfuWriterAsync> CfuUpdateContent<W> for CfuUpdater {
         let remainder = total_bytes % chunk_size;
 
         // Read and process data in chunks so as to not over-burden memory resources
-        let mut resp = FwUpdateContentResponse::new(0, CfuUpdateContentResponseStatus::ErrorInvalid);
+        let mut resp: FwUpdateContentResponse =
+            FwUpdateContentResponse::new(0, CfuUpdateContentResponseStatus::ErrorInvalid);
         for i in 0..num_chunks {
             let mut chunk = [0u8; DEFAULT_DATA_LENGTH];
             let address_offset = i * DEFAULT_DATA_LENGTH + base_offset;
@@ -120,7 +121,12 @@ impl<W: CfuWriterAsync> CfuUpdateContent<W> for CfuUpdater {
                 }
                 _ => {
                     image
-                        .get_bytes_for_chunk(&mut chunk[..remainder], address_offset)
+                        .get_bytes_for_chunk(
+                            chunk
+                                .get_mut(0..remainder)
+                                .ok_or(CfuProtocolError::WriterError(CfuWriterError::Other))?,
+                            address_offset,
+                        )
                         .await
                         .map_err(|_| CfuProtocolError::WriterError(CfuWriterError::StorageError))?;
                     self.process_last_data_block(writer, chunk, i).await
