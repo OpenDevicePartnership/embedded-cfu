@@ -40,6 +40,16 @@ impl From<FwVersion> for u32 {
     }
 }
 
+impl From<u32> for FwVersion {
+    fn from(ver: u32) -> Self {
+        Self {
+            variant: (ver & 0xFF) as u8,
+            minor: ((ver >> 8) & 0xFFFF) as u16,
+            major: ((ver >> 24) & 0xFF) as u8,
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// LSB first Representation of GetFwVersionResponse
