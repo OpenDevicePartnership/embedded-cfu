@@ -6,7 +6,7 @@ use crate::protocol_definitions::{
     FW_UPDATE_FLAG_LAST_BLOCK,
 };
 use crate::writer::{CfuWriterAsync, CfuWriterError};
-use crate::{trace, CfuImage, DataChunk};
+use crate::{error, trace, CfuImage, DataChunk};
 
 /// CfuHostStates trait defines behavior needed for a Cfu Host to process available Cfu Offers
 /// and send the appropriate commands to the Cfu Client to update the components
@@ -77,6 +77,15 @@ impl<W: CfuWriterAsync> CfuUpdateContent<W> for CfuUpdater {
         cmpt_id: ComponentId,
         base_offset: usize,
     ) -> Result<FwUpdateContentResponse, CfuProtocolError> {
+        let total_bytes: usize = image.get_total_size();
+
+        if total_bytes <= DEFAULT_DATA_LENGTH {
+            error!(
+                "image size less than or equal to chunk size, we need at least for 2 chunks for first and last block"
+            );
+            return Err(CfuProtocolError::WriterError(CfuWriterError::Other));
+        }
+
         // Build update offer command
         let updateoffercmd_bytes = [0u8; 16];
         let mut offer_resp = [0u8; 16];
@@ -93,7 +102,6 @@ impl<W: CfuWriterAsync> CfuUpdateContent<W> for CfuUpdater {
             return Err(CfuProtocolError::CfuContentUpdateResponseError(status));
         }
 
-        let total_bytes: usize = image.get_total_size();
         let chunk_size = DEFAULT_DATA_LENGTH;
         let num_chunks = total_bytes / chunk_size;
         let remainder = total_bytes % chunk_size;
@@ -101,38 +109,33 @@ impl<W: CfuWriterAsync> CfuUpdateContent<W> for CfuUpdater {
         // Read and process data in chunks so as to not over-burden memory resources
         let mut resp: FwUpdateContentResponse =
             FwUpdateContentResponse::new(0, CfuUpdateContentResponseStatus::ErrorInvalid);
+
         for i in 0..num_chunks {
             let mut chunk = [0u8; DEFAULT_DATA_LENGTH];
             let address_offset = i * DEFAULT_DATA_LENGTH + base_offset;
+
+            image
+                .get_bytes_for_chunk(&mut chunk, address_offset)
+                .await
+                .map_err(|_| CfuProtocolError::WriterError(CfuWriterError::StorageError))?;
+
             let r = match i {
                 0 => {
-                    image
-                        .get_bytes_for_chunk(&mut chunk, address_offset)
-                        .await
-                        .map_err(|_| CfuProtocolError::WriterError(CfuWriterError::StorageError))?;
                     self.process_first_data_block(writer, chunk).await
                 }
-                num if (num < num_chunks) => {
-                    image
-                        .get_bytes_for_chunk(&mut chunk, address_offset)
-                        .await
-                        .map_err(|_| CfuProtocolError::WriterError(CfuWriterError::StorageError))?;
+                num if (num < num_chunks - 1) => {
                     self.process_middle_data_block(writer, chunk, i).await
                 }
-                _ => {
-                    image
-                        .get_bytes_for_chunk(
-                            chunk
-                                .get_mut(0..remainder)
-                                .ok_or(CfuProtocolError::WriterError(CfuWriterError::Other))?,
-                            address_offset,
-                        )
-                        .await
-                        .map_err(|_| CfuProtocolError::WriterError(CfuWriterError::StorageError))?;
-                    self.process_last_data_block(writer, chunk, i).await
+                _ /* num_chunks - 1 */ => {
+                    if remainder == 0 {
+                        self.process_last_data_block(writer, chunk, i).await
+                    } else {
+                        self.process_middle_data_block(writer, chunk, i).await
+                    }
                 }
             }
             .map_err(CfuProtocolError::WriterError)?;
+
             // if no errors in processing the data block, check the response
             if r.status != CfuUpdateContentResponseStatus::Success {
                 return Err(CfuProtocolError::UpdateError(cmpt_id));
@@ -140,6 +143,33 @@ impl<W: CfuWriterAsync> CfuUpdateContent<W> for CfuUpdater {
             resp = r;
         }
 
+        if remainder != 0 {
+            let mut last_chunk = [0u8; DEFAULT_DATA_LENGTH];
+            let address_offset = num_chunks * DEFAULT_DATA_LENGTH + base_offset;
+
+            image
+                .get_bytes_for_chunk(
+                    last_chunk
+                        .get_mut(0..remainder)
+                        .ok_or(CfuProtocolError::WriterError(CfuWriterError::Other))?,
+                    address_offset,
+                )
+                .await
+                .map_err(|_| CfuProtocolError::WriterError(CfuWriterError::StorageError))?;
+
+            let r = self
+                .process_last_data_block(writer, last_chunk, num_chunks)
+                .await
+                .map_err(CfuProtocolError::WriterError)?;
+
+            // if no errors in processing the data block, check the response
+            if r.status != CfuUpdateContentResponseStatus::Success {
+                return Err(CfuProtocolError::UpdateError(cmpt_id));
+            }
+            resp = r;
+        }
+
+        let num_chunks = if remainder == 0 { num_chunks } else { num_chunks + 1 };
         if resp.sequence != num_chunks as u16 {
             trace!("final sequence number does not match expected number of chunks");
             return Err(CfuProtocolError::InvalidBlockTransition);
