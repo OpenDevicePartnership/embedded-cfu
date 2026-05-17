@@ -64,7 +64,7 @@ jobs:
       - name: Install nightly
         uses: dtolnay/rust-toolchain@nightly
       - name: cargo doc
-        run: cargo doc --no-deps --all-features
+        run: cargo doc --locked --no-deps --all-features
         env:
           RUSTDOCFLAGS: --cfg docsrs
 
@@ -86,9 +86,9 @@ jobs:
       # intentionally no target specifier; see https://github.com/jonhoo/rust-ci-conf/pull/4
       # --feature-powerset runs for every combination of features
       - name: cargo hack
-        run: cargo hack --feature-powerset --mutually-exclusive-features=log,defmt check
+        run: cargo hack --feature-powerset --mutually-exclusive-features=log,defmt check --locked
       - name : cargo hack clippy
-        run: cargo hack --feature-powerset --mutually-exclusive-features=log,defmt clippy -- -Dwarnings
+        run: cargo hack --feature-powerset --mutually-exclusive-features=log,defmt clippy --locked -- -Dwarnings
 
   deny:
     # cargo-deny checks licenses, advisories, sources, and bans for
@@ -107,7 +107,7 @@ jobs:
           log-level: warn
           manifest-path: ./Cargo.toml
           command: check
-          arguments: --all-features
+          arguments: --all-features --locked
 
   test:
     runs-on: ubuntu-latest
@@ -121,7 +121,7 @@ jobs:
       - name: cargo install cargo-hack
         uses: taiki-e/install-action@cargo-hack
       - name: cargo test
-        run: cargo hack --feature-powerset --mutually-exclusive-features=log,defmt test
+        run: cargo hack --feature-powerset --mutually-exclusive-features=log,defmt test --locked
 
   msrv:
     # check that we can build using the minimal rust version that is specified by this crate
